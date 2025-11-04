@@ -1,0 +1,44 @@
+/*!*****************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************!*\
+  !*** css ./node_modules/next/dist/build/webpack/loaders/css-loader/src/index.js??ruleSet[1].rules[13].oneOf[3].use[1]!./node_modules/next/dist/build/webpack/loaders/next-font-loader/index.js??ruleSet[1].rules[13].oneOf[3].use[2]!./node_modules/next/font/local/target.css?{"path":"src/styles/fonts/index.ts","import":"","arguments":[{"src":[{"path":"./integralcf-bold.woff","weight":"700","style":"normal"}],"fallback":["sans-serif"],"variable":"--font-integralCF"}],"variableName":"integralCF"} ***!
+  \*****************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************/
+@font-face {
+font-family: '__integralCF_931021';
+src: url(/_next/static/media/2f984b35b2bc0775-s.p.woff) format('woff');
+font-display: swap;
+font-weight: 700;
+font-style: normal;
+}@font-face {font-family: '__integralCF_Fallback_931021';src: local("Arial");ascent-override: 72.12%;descent-override: 8.39%;line-gap-override: 0.00%;size-adjust: 149.06%
+}.__className_931021 {font-family: '__integralCF_931021', '__integralCF_Fallback_931021', sans-serif;font-weight: 700;font-style: normal
+}.__variable_931021 {--font-integralCF: '__integralCF_931021', '__integralCF_Fallback_931021', sans-serif
+}
+
+/*!*******************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************!*\
+  !*** css ./node_modules/next/dist/build/webpack/loaders/css-loader/src/index.js??ruleSet[1].rules[13].oneOf[3].use[1]!./node_modules/next/dist/build/webpack/loaders/next-font-loader/index.js??ruleSet[1].rules[13].oneOf[3].use[2]!./node_modules/next/font/local/target.css?{"path":"src/styles/fonts/index.ts","import":"","arguments":[{"src":[{"path":"./Satoshi-Regular.woff","weight":"400","style":"normal"},{"path":"./Satoshi-Medium.woff","weight":"500","style":"normal"},{"path":"./Satoshi-Bold.woff","weight":"700","style":"normal"}],"fallback":["sans-serif"],"variable":"--font-satoshi"}],"variableName":"satoshi"} ***!
+  \*******************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************/
+@font-face {
+font-family: '__satoshi_5b3efc';
+src: url(/_next/static/media/bb2acceef8cbb95c-s.p.woff) format('woff');
+font-display: swap;
+font-weight: 400;
+font-style: normal;
+}
+
+@font-face {
+font-family: '__satoshi_5b3efc';
+src: url(/_next/static/media/f3941e6867f6ff9d-s.p.woff) format('woff');
+font-display: swap;
+font-weight: 500;
+font-style: normal;
+}
+
+@font-face {
+font-family: '__satoshi_5b3efc';
+src: url(/_next/static/media/b28a04c41ba0cf39-s.p.woff) format('woff');
+font-display: swap;
+font-weight: 700;
+font-style: normal;
+}@font-face {font-family: '__satoshi_Fallback_5b3efc';src: local("Arial");ascent-override: 102.23%;descent-override: 24.29%;line-gap-override: 10.12%;size-adjust: 98.80%
+}.__className_5b3efc {font-family: '__satoshi_5b3efc', '__satoshi_Fallback_5b3efc', sans-serif
+}.__variable_5b3efc {--font-satoshi: '__satoshi_5b3efc', '__satoshi_Fallback_5b3efc', sans-serif
+}
+
