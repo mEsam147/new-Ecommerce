@@ -1145,3 +1145,44 @@ export const debugRequest = (req, res, next) => {
   })
   next()
 }
+
+export const validateSearchQuery = [
+  query('q')
+    .optional()
+    .isLength({ min: 2 })
+    .withMessage('Search query must be at least 2 characters long')
+    .trim()
+    .escape(),
+
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit must be between 1 and 100'),
+
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+
+  query('sort')
+    .optional()
+    .isIn([
+      'relevance',
+      'newest',
+      'oldest',
+      'price-low',
+      'price-high',
+      'name-asc',
+      'name-desc',
+      'popular',
+      'rating',
+      'featured',
+    ])
+    .withMessage('Invalid sort option'),
+
+  (req, res, next) => {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      const errorMessages = errors.array().map((error) => error.msg)
+      throw new ApiError(400, 'Validation failed', false, errorMessages)
+    }
+    next()
+  },
+]

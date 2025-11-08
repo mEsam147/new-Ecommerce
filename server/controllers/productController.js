@@ -8,9 +8,97 @@ import ApiError from '../utils/ApiError.js'
 import ApiFeatures from '../utils/apiFeatures.js'
 import productService from '../services/productService.js'
 
-// @desc    Get all products
-// @route   GET /api/products
-// @access  Public
+export const getFilterOptions = asyncHandler(async (req, res) => {
+  try {
+    const filterOptions = await Product.aggregate([
+      { $match: { isActive: true } },
+      {
+        $facet: {
+          // Get all unique categories
+          categories: [
+            { $group: { _id: '$category', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ],
+          // Get all unique brands
+          brands: [
+            { $match: { brand: { $exists: true, $ne: '' } } },
+            { $group: { _id: '$brand', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ],
+          // Get all unique tags
+          tags: [
+            { $unwind: '$tags' },
+            { $group: { _id: '$tags', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 20 },
+          ],
+          // Get all unique colors from variants
+          colors: [
+            { $unwind: '$variants' },
+            { $group: { _id: '$variants.color', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ],
+          // Get all unique sizes from variants
+          sizes: [
+            { $unwind: '$variants' },
+            { $group: { _id: '$variants.size', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ],
+          // Price range
+          priceRange: [
+            {
+              $group: {
+                _id: null,
+                minPrice: { $min: '$price' },
+                maxPrice: { $max: '$price' },
+              },
+            },
+          ],
+        },
+      },
+    ])
+
+    const result = filterOptions[0]
+
+    res.json({
+      success: true,
+      data: {
+        categories: result.categories.map((cat) => ({
+          name: cat._id,
+          count: cat.count,
+        })),
+        brands: result.brands.map((brand) => ({
+          name: brand._id,
+          count: brand.count,
+        })),
+        tags: result.tags.map((tag) => ({
+          name: tag._id,
+          count: tag.count,
+        })),
+        colors: result.colors.map((color) => ({
+          name: color._id,
+          count: color.count,
+        })),
+        sizes: result.sizes.map((size) => ({
+          name: size._id,
+          count: size.count,
+        })),
+        priceRange: result.priceRange[0]
+          ? {
+              min: result.priceRange[0].minPrice,
+              max: result.priceRange[0].maxPrice,
+            }
+          : { min: 0, max: 1000 },
+      },
+    })
+  } catch (error) {
+    console.error('Error getting filter options:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching filter options',
+    })
+  }
+})
 export const getProducts = asyncHandler(async (req, res) => {
   const features = new ApiFeatures(Product.find(), req.query)
     .filter()
@@ -887,42 +975,161 @@ export const exportProducts = asyncHandler(async (req, res) => {
 
 // Get popular products (based on sales and ratings)
 
+// export const getTrendingProducts = async (req, res) => {
+//   try {
+//     const { limit = 8 } = req.query
+
+//     // Validate limit parameter
+//     const parsedLimit = parseInt(limit)
+//     if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 50) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Limit must be a number between 1 and 50',
+//       })
+//     }
+
+//     // Get current date for recency calculation
+//     const currentDate = new Date()
+//     const thirtyDaysAgo = new Date(currentDate.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+//     // Simple aggregation without complex scoring first
+//     const trendingProducts = await Product.aggregate([
+//       {
+//         $match: {
+//           isActive: true,
+//           $or: [
+//             { isFeatured: true },
+//             { 'rating.average': { $gte: 4 } },
+//             { salesCount: { $gte: 5 } },
+//           ],
+//         },
+//       },
+//       {
+//         $project: {
+//           title: 1,
+//           slug: 1,
+//           price: 1,
+//           comparePrice: 1,
+//           images: { $slice: ['$images', 1] }, // Only get first image
+//           rating: 1,
+//           salesCount: 1,
+//           category: 1,
+//           brand: 1,
+//           isFeatured: 1,
+//           createdAt: 1,
+//           viewCount: 1,
+//           // Calculate a simple trending score
+//           trendingScore: {
+//             $add: [
+//               { $ifNull: ['$rating.average', 0] },
+//               { $multiply: [{ $ifNull: ['$salesCount', 0] }, 0.1] },
+//               { $cond: [{ $eq: ['$isFeatured', true] }, 2, 0] },
+//             ],
+//           },
+//         },
+//       },
+//       {
+//         $sort: {
+//           trendingScore: -1,
+//           createdAt: -1,
+//         },
+//       },
+//       {
+//         $limit: parsedLimit,
+//       },
+//     ])
+
+//     // If no products found with criteria, get any active products
+//     let finalProducts = trendingProducts
+//     if (trendingProducts.length === 0) {
+//       finalProducts = await Product.find({ isActive: true })
+//         .select(
+//           'title slug price comparePrice images rating salesCount category brand isFeatured createdAt'
+//         )
+//         .sort({ createdAt: -1 })
+//         .limit(parsedLimit)
+//         .lean()
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       data: finalProducts,
+//       count: finalProducts.length,
+//     })
+//   } catch (error) {
+//     console.error('Error in getTrendingProducts:', error)
+//     res.status(500).json({
+//       success: false,
+//       message: 'Error fetching trending products',
+//       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+//     })
+//   }
+// }
+
+// backend/controllers/productController.js
 export const getTrendingProducts = async (req, res) => {
   try {
-    const { limit = 8 } = req.query
+    const { page = 1, limit = 12, category, sort = 'trending' } = req.query
 
-    // Validate limit parameter
-    const parsedLimit = parseInt(limit)
-    if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 50) {
+    // Validate parameters
+    const parsedPage = Math.max(1, parseInt(page))
+    const parsedLimit = Math.min(Math.max(1, parseInt(limit)), 50)
+    const skip = (parsedPage - 1) * parsedLimit
+
+    if (isNaN(parsedPage) || isNaN(parsedLimit)) {
       return res.status(400).json({
         success: false,
-        message: 'Limit must be a number between 1 and 50',
+        message: 'Page and limit must be valid numbers',
       })
     }
 
-    // Get current date for recency calculation
-    const currentDate = new Date()
-    const thirtyDaysAgo = new Date(currentDate.getTime() - 30 * 24 * 60 * 60 * 1000)
-
-    // Simple aggregation without complex scoring first
-    const trendingProducts = await Product.aggregate([
-      {
-        $match: {
-          isActive: true,
-          $or: [
-            { isFeatured: true },
-            { 'rating.average': { $gte: 4 } },
-            { salesCount: { $gte: 5 } },
-          ],
-        },
+    // Build match stage for aggregation
+    const matchStage = {
+      $match: {
+        isActive: true,
+        ...(category && { category: category }),
       },
+    }
+
+    // Build sort stage based on sort parameter
+    let sortStage = {}
+    switch (sort) {
+      case 'newest':
+        sortStage = { $sort: { createdAt: -1 } }
+        break
+      case 'price-low':
+        sortStage = { $sort: { price: 1 } }
+        break
+      case 'price-high':
+        sortStage = { $sort: { price: -1 } }
+        break
+      case 'rating':
+        sortStage = { $sort: { 'rating.average': -1, 'rating.count': -1 } }
+        break
+      case 'popular':
+      case 'trending':
+      default:
+        // Complex trending score calculation
+        sortStage = {
+          $sort: {
+            trendingScore: -1,
+            salesCount: -1,
+            'rating.average': -1,
+            createdAt: -1,
+          },
+        }
+    }
+
+    // Aggregation pipeline for trending products with pagination
+    const aggregationPipeline = [
+      matchStage,
       {
         $project: {
           title: 1,
           slug: 1,
           price: 1,
           comparePrice: 1,
-          images: { $slice: ['$images', 1] }, // Only get first image
+          images: { $slice: ['$images', 1] },
           rating: 1,
           salesCount: 1,
           category: 1,
@@ -930,43 +1137,104 @@ export const getTrendingProducts = async (req, res) => {
           isFeatured: 1,
           createdAt: 1,
           viewCount: 1,
-          // Calculate a simple trending score
+          inventory: 1,
+          tags: 1,
+          // Enhanced trending score calculation
           trendingScore: {
             $add: [
+              // Base rating contribution (0-5 points)
               { $ifNull: ['$rating.average', 0] },
+
+              // Sales count contribution (0.1 point per sale)
               { $multiply: [{ $ifNull: ['$salesCount', 0] }, 0.1] },
-              { $cond: [{ $eq: ['$isFeatured', true] }, 2, 0] },
+
+              // View count contribution (0.01 point per view)
+              { $multiply: [{ $ifNull: ['$viewCount', 0] }, 0.01] },
+
+              // Featured product bonus
+              { $cond: [{ $eq: ['$isFeatured', true] }, 3, 0] },
+
+              // Recency bonus (recent products get higher score)
+              {
+                $multiply: [
+                  {
+                    $divide: [
+                      { $subtract: [new Date(), '$createdAt'] },
+                      1000 * 60 * 60 * 24 * 30, // 30 days in milliseconds
+                    ],
+                  },
+                  -1, // Negative to make recent products score higher
+                ],
+              },
             ],
           },
         },
       },
+      sortStage,
       {
-        $sort: {
-          trendingScore: -1,
-          createdAt: -1,
+        $facet: {
+          // Get paginated results
+          products: [{ $skip: skip }, { $limit: parsedLimit }],
+          // Get total count for pagination
+          totalCount: [{ $count: 'count' }],
         },
       },
-      {
-        $limit: parsedLimit,
-      },
-    ])
+    ]
 
-    // If no products found with criteria, get any active products
-    let finalProducts = trendingProducts
-    if (trendingProducts.length === 0) {
-      finalProducts = await Product.find({ isActive: true })
+    const [result] = await Product.aggregate(aggregationPipeline)
+
+    const products = result.products || []
+    const totalCount = result.totalCount[0]?.count || 0
+    const totalPages = Math.ceil(totalCount / parsedLimit)
+
+    // If no products found with trending criteria, fallback to active products
+    let finalProducts = products
+    let finalTotalCount = totalCount
+    let finalTotalPages = totalPages
+
+    if (products.length === 0 && parsedPage === 1) {
+      // Fallback: get any active products
+      const fallbackProducts = await Product.find({
+        isActive: true,
+        ...(category && { category: category }),
+      })
         .select(
-          'title slug price comparePrice images rating salesCount category brand isFeatured createdAt'
+          'title slug price comparePrice images rating salesCount category brand isFeatured createdAt viewCount inventory tags'
         )
         .sort({ createdAt: -1 })
+        .skip(skip)
         .limit(parsedLimit)
         .lean()
+
+      const fallbackTotalCount = await Product.countDocuments({
+        isActive: true,
+        ...(category && { category: category }),
+      })
+
+      finalProducts = fallbackProducts
+      finalTotalCount = fallbackTotalCount
+      finalTotalPages = Math.ceil(fallbackTotalCount / parsedLimit)
     }
 
     res.status(200).json({
       success: true,
-      data: finalProducts,
-      count: finalProducts.length,
+      data: {
+        products: finalProducts,
+        pagination: {
+          currentPage: parsedPage,
+          totalPages: finalTotalPages,
+          totalProducts: finalTotalCount,
+          hasNextPage: parsedPage < finalTotalPages,
+          hasPrevPage: parsedPage > 1,
+          nextPage: parsedPage < finalTotalPages ? parsedPage + 1 : null,
+          prevPage: parsedPage > 1 ? parsedPage - 1 : null,
+          limit: parsedLimit,
+        },
+      },
+      message:
+        finalProducts.length === 0
+          ? 'No trending products found'
+          : 'Trending products fetched successfully',
     })
   } catch (error) {
     console.error('Error in getTrendingProducts:', error)
@@ -977,7 +1245,6 @@ export const getTrendingProducts = async (req, res) => {
     })
   }
 }
-
 export const getPopularProducts = async (req, res) => {
   try {
     const { limit = 8 } = req.query

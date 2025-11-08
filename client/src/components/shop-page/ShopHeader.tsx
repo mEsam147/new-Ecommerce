@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { Search } from 'lucide-react';
 
 interface ShopHeaderProps {
   filters: any;
@@ -39,50 +39,49 @@ export const ShopHeader: React.FC<ShopHeaderProps> = ({
 
   if (isLoading) {
     return (
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 space-y-4 lg:space-y-0">
-        <Skeleton className="h-8 w-48" />
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-8 w-40" />
-          <Skeleton className="h-8 w-32" />
-        </div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-3 sm:space-y-0">
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-9 w-40" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 space-y-4 lg:space-y-0">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3">
       {/* Results Count */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">
-          {filters.category ? `${filters.category} Products` : 'All Products'}
+      <div className="space-y-1">
+        <h1 className="text-xl font-semibold text-gray-900">
+          {filters.category ? `${filters.category}` : 'All Products'}
         </h1>
-        <p className="text-gray-600">
-          Showing {showingProducts} of {totalProducts} products
-          {filters.search && ` for "${filters.search}"`}
-        </p>
+        <div className="flex items-center gap-2 text-sm text-gray-600">
+          <span>{showingProducts} of {totalProducts} products</span>
+          {filters.search && (
+            <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs">
+              <Search className="w-3 h-3" />
+              "{filters.search}"
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Sort & View Options */}
-      <div className="flex items-center gap-4">
-        {/* Sort By */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600 whitespace-nowrap">Sort by:</span>
-          <Select
-            value={filters.sortBy}
-            onValueChange={(value) => onFilterChange({ sortBy: value })}
-          >
-            <SelectTrigger className="w-48 bg-white border-gray-300">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {sortOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      {/* Sort Options */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-gray-600 whitespace-nowrap">Sort:</span>
+        <Select
+          value={filters.sortBy}
+          onValueChange={(value) => onFilterChange({ sortBy: value })}
+        >
+          <SelectTrigger className="w-40 bg-white">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {sortOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );

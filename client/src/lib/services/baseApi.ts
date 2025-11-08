@@ -15,17 +15,21 @@ export const baseApi = createApi({
     'Auth',
     'User',
     'Cart',
+    'Review',
     'Wishlist',
     'Product',
     'Category',
     'Order',
-    'Review',
-
+    'Reviews',
+    'Billing',
+    'Profile',
+    'PaymentMethods',
     'Address',
     'Coupon',
     'Brand',
     'Analytics',
-    'PaymentMethod'
+    'PaymentMethod',
+    'Search'
   ],
   endpoints: () => ({}),
 });

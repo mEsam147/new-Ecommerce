@@ -1,4 +1,3 @@
-// routes/auth.js
 import express from 'express'
 import {
   register,
@@ -9,6 +8,8 @@ import {
   forgotPassword,
   resetPassword,
   logout,
+  updateAvatar,
+  deleteAvatar,
 } from '../controllers/authController.js'
 import { protect } from '../middleware/auth.js'
 import {
@@ -19,10 +20,11 @@ import {
   validateForgotPassword,
   validateResetPassword,
 } from '../middleware/validation.js'
+import upload from '../middleware/multer.js' // لإرسال الصورة
 
 const router = express.Router()
 
-router.post('/register', register)
+router.post('/register', validateRegister, register)
 router.post('/login', validateLogin, login)
 router.post('/forgot-password', validateForgotPassword, forgotPassword)
 router.put('/reset-password/:token', validateResetPassword, resetPassword)
@@ -30,8 +32,12 @@ router.put('/reset-password/:token', validateResetPassword, resetPassword)
 router.use(protect)
 
 router.get('/me', getMe)
-router.put('/profile', validateUpdateProfile, updateProfile)
+router.put('/profile', updateProfile)
 router.put('/change-password', validateChangePassword, changePassword)
 router.post('/logout', logout)
+
+// ✅ أضف دول
+router.put('/avatar', upload.single('avatar'), updateAvatar)
+router.delete('/avatar', deleteAvatar)
 
 export default router

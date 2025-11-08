@@ -6,120 +6,157 @@ export interface Review {
   user: {
     _id: string;
     name: string;
-    avatar?: string;
+    avatar?: {
+      url: string;
+    };
   };
-  product: string;
+  product: {
+    _id: string;
+    title: string;
+    images: Array<{
+      url: string;
+    }>;
+    slug: string;
+  };
   rating: number;
   title?: string;
   comment: string;
+  images?: Array<{
+    public_id: string;
+    url: string;
+  }>;
   isVerified: boolean;
-  likes: number;
-  dislikes: number;
+  likes: string[];
+  reports: Array<{
+    user: string;
+    reason: string;
+    createdAt: string;
+  }>;
+  helpful: number;
+  isEdited: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface CreateReviewData {
+  productId: string;
+  rating: number;
+  title?: string;
+  comment: string;
+  images?: File[];
+}
+
+export interface UpdateReviewData {
+  rating?: number;
+  title?: string;
+  comment?: string;
+}
+
+export interface ReviewsResponse {
+  success: boolean;
+  data: {
+    reviews: Review[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      pages: number;
+    };
+  };
+}
+
+export interface ReviewStats {
+  success: boolean;
+  data: {
+    totalReviews: number;
+    averageRating: number;
+    ratingDistribution: {
+      1: number;
+      2: number;
+      3: number;
+      4: number;
+      5: number;
+    };
+    verifiedReviews: number;
+  };
+}
+
 export const reviewsApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    getProductReviews: builder.query<{
-      success: boolean;
-      data: {
-        reviews: Review[];
-        summary: {
-          average: number;
-          total: number;
-          distribution: any;
-        };
-        pagination: any;
-      }
-    }, { productId: string; page?: number; limit?: number; rating?: number }>({
-      query: ({ productId, page = 1, limit = 10, rating }) => {
-        const params = new URLSearchParams({
-          page: page.toString(),
-          limit: limit.toString(),
-        });
-
-        if (rating) params.append('rating', rating.toString());
-
-        return `/reviews/product/${productId}?${params.toString()}`;
-      },
-      providesTags: ['Review'],
+    // Get user's reviews
+    getUserReviews: builder.query<ReviewsResponse, { page?: number; limit?: number }>({
+      query: (params = {}) => ({
+        url: '/reviews/my-reviews',
+        params: {
+          page: params.page || 1,
+          limit: params.limit || 10,
+        },
+      }),
+      providesTags: ['Reviews'],
     }),
 
-    getUserReviews: builder.query<{ success: boolean; data: Review[]; pagination: any }, { page?: number; limit?: number }>({
-      query: ({ page = 1, limit = 10 } = {}) => `/reviews/my-reviews?page=${page}&limit=${limit}`,
-      providesTags: ['Review'],
-    }),
-
-    createReview: builder.mutation<{ success: boolean; data: Review; message: string }, {
-      productId: string;
-      rating: number;
-      title?: string;
-      comment: string;
-    }>({
-      query: (reviewData) => ({
+    // Create review
+    createReview: builder.mutation<{ success: boolean; data: { review: Review } }, CreateReviewData>({
+      query: (data) => ({
         url: '/reviews',
         method: 'POST',
-        body: reviewData,
+        body: data,
       }),
-      invalidatesTags: ['Review', 'Product'],
+      invalidatesTags: ['Reviews', 'Product'],
     }),
 
-    updateReview: builder.mutation<{ success: boolean; data: Review; message: string }, {
-      id: string;
-      data: {
-        rating?: number;
-        title?: string;
-        comment?: string;
-      };
-    }>({
+    // Update review
+    updateReview: builder.mutation<{ success: boolean; data: { review: Review } }, { id: string; data: UpdateReviewData }>({
       query: ({ id, data }) => ({
         url: `/reviews/${id}`,
         method: 'PUT',
         body: data,
       }),
-      invalidatesTags: (result, error, { id }) => [{ type: 'Review', id }],
+      invalidatesTags: ['Reviews', 'Product'],
     }),
 
+    // Delete review
     deleteReview: builder.mutation<{ success: boolean; message: string }, string>({
       query: (id) => ({
         url: `/reviews/${id}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['Review'],
+      invalidatesTags: ['Reviews', 'Product'],
     }),
 
-    likeReview: builder.mutation<{ success: boolean; data: { likes: number }; message: string }, string>({
+    // Like/unlike review
+    likeReview: builder.mutation<{ success: boolean; data: { review: Review } }, string>({
       query: (id) => ({
         url: `/reviews/${id}/like`,
         method: 'POST',
       }),
-      invalidatesTags: ['Review'],
+      invalidatesTags: ['Reviews'],
     }),
 
-    // Admin only
-    getAllReviews: builder.query<{ success: boolean; data: Review[]; pagination: any }, { page?: number; limit?: number }>({
-      query: ({ page = 1, limit = 10 } = {}) => `/reviews?page=${page}&limit=${limit}`,
-      providesTags: ['Review'],
-    }),
-
-    toggleReviewVerification: builder.mutation<{ success: boolean; data: Review; message: string }, string>({
-      query: (id) => ({
-        url: `/reviews/${id}/verify`,
-        method: 'PATCH',
+    // Report review
+    reportReview: builder.mutation<{ success: boolean; message: string }, { id: string; reason: string }>({
+      query: ({ id, reason }) => ({
+        url: `/reviews/${id}/report`,
+        method: 'POST',
+        body: { reason },
       }),
-      invalidatesTags: ['Review'],
+      invalidatesTags: ['Reviews'],
+    }),
+
+    // Get review stats
+    getReviewStats: builder.query<ReviewStats, void>({
+      query: () => '/reviews/stats',
+      providesTags: ['Reviews'],
     }),
   }),
 });
 
 export const {
-  useGetProductReviewsQuery,
   useGetUserReviewsQuery,
   useCreateReviewMutation,
   useUpdateReviewMutation,
   useDeleteReviewMutation,
   useLikeReviewMutation,
-  useGetAllReviewsQuery,
-  useToggleReviewVerificationMutation,
+  useReportReviewMutation,
+  useGetReviewStatsQuery,
 } = reviewsApi;

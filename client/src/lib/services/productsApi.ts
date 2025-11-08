@@ -2,7 +2,18 @@
 import { Product, ProductFilters, ProductResponse, ProductsResponse } from '@/types';
 import { baseApi } from './baseApi';
 
-
+// Add FilterOptions type
+interface FilterOptions {
+  categories: Array<{ name: string; count: number }>;
+  brands: Array<{ name: string; count: number }>;
+  tags: Array<{ name: string; count: number }>;
+  colors: Array<{ name: string; count: number }>;
+  sizes: Array<{ name: string; count: number }>;
+  priceRange: {
+    min: number;
+    max: number;
+  };
+}
 
 export const productsApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -25,10 +36,17 @@ export const productsApi = baseApi.injectEndpoints({
       providesTags: ['Product'],
     }),
 
+    // Add getFilterOptions endpoint
+    getFilterOptions: builder.query<{ success: boolean; data: FilterOptions }, void>({
+      query: () => '/products/filters/options',
+      providesTags: ['Product'],
+    }),
+
     getProduct: builder.query<{ success: boolean; data: Product }, string>({
       query: (id) => `/products/${id}`,
       providesTags: (result, error, id) => [{ type: 'Product', id }],
     }),
+
     getProductBySlug: builder.query<ProductResponse, string>({
       query: (slug) => `/products/slug/${slug}`,
       providesTags: (result, error, slug) => [
@@ -36,12 +54,20 @@ export const productsApi = baseApi.injectEndpoints({
         { type: 'Product', id: 'LIST' },
       ],
     }),
-      getTrendingProducts: builder.query({
+
+    getTrendingProducts: builder.query({
       query: (params = {}) => ({
         url: '/products/trending',
-        params,
+        params: {
+          page: params.page || 1,
+          limit: params.limit || 12,
+          ...(params.category && { category: params.category }),
+          ...(params.sort && { sort: params.sort })
+        },
       }),
+      providesTags: ['Product'],
     }),
+
     getPopularProducts: builder.query({
       query: (params = {}) => ({
         url: '/products/popular',
@@ -49,17 +75,10 @@ export const productsApi = baseApi.injectEndpoints({
       }),
     }),
 
-
-
     getFeaturedProducts: builder.query<{ success: boolean; data: Product[] }, { limit?: number }>({
       query: ({ limit = 8 } = {}) => `/products/featured?limit=${limit}`,
       providesTags: ['Product'],
     }),
-
-    // getTrendingProducts: builder.query<{ success: boolean; data: Product[] }, { limit?: number }>({
-    //   query: ({ limit = 10 } = {}) => `/products/trending?limit=${limit}`,
-    //   providesTags: ['Product'],
-    // }),
 
     getRecommendedProducts: builder.query<{ success: boolean; data: Product[] }, { limit?: number }>({
       query: ({ limit = 8 } = {}) => `/products/recommended?limit=${limit}`,
@@ -128,6 +147,34 @@ export const productsApi = baseApi.injectEndpoints({
       invalidatesTags: ['Product'],
     }),
 
+    getProductsByCategory: builder.query<any, {
+      categorySlug: string;
+      sort?: string;
+      page?: number;
+      limit?: number;
+      minPrice?: number;
+      maxPrice?: number;
+      brand?: string[];
+    }>({
+      query: ({ categorySlug, ...filters }) => {
+        const params = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            if (Array.isArray(value)) {
+              value.forEach(v => params.append(key, v.toString()));
+            } else {
+              params.append(key, value.toString());
+            }
+          }
+        });
+        return `/products/category/${categorySlug}?${params.toString()}`;
+      },
+      providesTags: (result, error, { categorySlug }) => [
+        { type: 'Product', id: 'LIST' },
+        { type: 'Category', id: categorySlug }
+      ],
+    }),
+
     updateInventory: builder.mutation<{ success: boolean; data: Product; message: string }, { id: string; inventory: any }>({
       query: ({ id, inventory }) => ({
         url: `/products/${id}/inventory`,
@@ -142,9 +189,11 @@ export const productsApi = baseApi.injectEndpoints({
 export const {
   useGetProductsQuery,
   useLazyGetProductsQuery,
+  useGetFilterOptionsQuery, // Add this export
   useGetProductQuery,
   useGetProductBySlugQuery,
   useGetFeaturedProductsQuery,
+  useGetProductsByCategoryQuery,
   useGetTrendingProductsQuery,
   useGetRecommendedProductsQuery,
   useGetRelatedProductsQuery,

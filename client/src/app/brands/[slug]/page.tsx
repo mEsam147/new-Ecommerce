@@ -19,7 +19,7 @@ interface BrandPageProps {
 // Server-side data fetching for brand by slug
 async function getBrandBySlug(slug: string) {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
     const response = await fetch(`${baseUrl}/brands/slug/${slug}`, {
       method: 'GET',
       headers: {

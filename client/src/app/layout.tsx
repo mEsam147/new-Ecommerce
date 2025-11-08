@@ -7,6 +7,7 @@ import HolyLoader from "holy-loader";
 import Providers from "./providers";
 import { Header } from "@/components/layout/Header/Header";
 import { CartSyncProvider } from "@/lib/CartSyncProvider";
+import ScrollToTop from "@/components/common/ScrollToTop";
 
 export const metadata: Metadata = {
   title: "Shopco",
@@ -25,7 +26,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={satoshi.className}>
-        <HolyLoader color="#868686" />
+        <ScrollToTop
+  threshold={500}
+  position="bottom-right"
+  showAfter={2000}
+/>
+        <HolyLoader color="#2b77fb" />
         <TopBanner />
         <Providers>
 

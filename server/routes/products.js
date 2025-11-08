@@ -15,6 +15,7 @@ import {
   getNewArrivals,
   getTopSelling,
   getTrendingProducts,
+  getFilterOptions,
 } from '../controllers/productController.js'
 import { protect, authorize } from '../middleware/auth.js'
 import { upload } from '../middleware/upload.js'
@@ -32,6 +33,8 @@ const router = express.Router()
 
 // Public routes
 router.get('/', validatePagination, validateProductFilters, getProducts)
+router.get('/filters/options', getFilterOptions)
+
 router.get('/featured', getFeaturedProducts)
 router.get('/new-arrivals', getNewArrivals)
 router.get('/top-selling', getTopSelling)

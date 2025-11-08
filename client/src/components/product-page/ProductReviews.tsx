@@ -120,7 +120,8 @@ const ProductReviews: React.FC<ProductReviewsProps> = ({
       setReviewDialogOpen(false);
       setReviewForm({ rating: 0, title: '', comment: '' });
     } catch (error: any) {
-      const errorMessage = error?.data?.message || 'Failed to submit review';
+      console.log("error" , error)
+      const errorMessage = error?.data?.error || 'Failed to submit review';
       toastError(errorMessage);
     }
   };

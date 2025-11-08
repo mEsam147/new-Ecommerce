@@ -1,4 +1,4 @@
-// components/ui/WishlistNavButton.tsx
+// components/layout/WishlistButton.tsx
 'use client';
 
 import React from 'react';
@@ -8,153 +8,144 @@ import { useRouter } from 'next/navigation';
 import { useWishlist } from '@/lib/hooks/useWishlist';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Skeleton } from '@/components/ui/skeleton';
 
-interface WishlistNavButtonProps {
-  variant?: 'ghost' | 'outline' | 'secondary' | 'default';
-  size?: 'sm' | 'md' | 'lg';
+interface WishlistButtonProps {
+  variant?: 'default' | 'ghost' | 'outline';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   showBadge?: boolean;
-  showText?: boolean;
   className?: string;
+  showText?: boolean;
 }
 
-export const WishlistNavButton: React.FC<WishlistNavButtonProps> = ({
+const WishlistButton: React.FC<WishlistButtonProps> = ({
   variant = 'ghost',
-  size = 'md',
+  size = 'lg', // Default to large for header
   showBadge = true,
-  showText = false,
   className,
+  showText = false,
 }) => {
   const router = useRouter();
-  const { count } = useWishlist();
+  const { items, isLoading } = useWishlist();
+  const count = items.length;
 
-  const handleClick = () => {
+  const handleClick = (): void => {
     router.push('/wishlist');
   };
 
-  const getButtonSize = () => {
-    switch (size) {
-      case 'sm': return 'h-9 px-2';
-      case 'lg': return 'h-11 px-4';
-      default: return 'h-10 px-3';
-    }
+  if (isLoading) {
+    return <WishlistButtonSkeleton size={size} />;
+  }
+
+  const sizeConfig = {
+    sm: {
+      button: 'h-10 w-10',
+      icon: 'w-5 h-5',
+      badge: 'h-5 min-w-5 text-xs -top-1 -right-1',
+      padding: 'p-2',
+    },
+    md: {
+      button: 'h-11 w-11',
+      icon: 'w-5.5 h-5.5',
+      badge: 'h-5 min-w-5 text-xs -top-1.5 -right-1',
+      padding: 'p-2.5',
+    },
+    lg: {
+      button: 'h-12 w-12',
+      icon: 'w-6 h-6',
+      badge: 'h-5 min-w-5 text-xs -top-1.5 -right-1',
+      padding: 'p-3',
+    },
+    xl: {
+      button: 'h-14 w-14',
+      icon: 'w-7 h-7',
+      badge: 'h-6 min-w-6 text-sm -top-2 -right-1.5',
+      padding: 'p-3.5',
+    },
   };
 
-  const getIconSize = () => {
-    switch (size) {
-      case 'sm': return 16;
-      case 'lg': return 20;
-      default: return 18;
-    }
-  };
+  const { button, icon, badge, padding } = sizeConfig[size];
 
-  const getTextSize = () => {
-    switch (size) {
-      case 'sm': return 'text-sm';
-      case 'lg': return 'text-lg';
-      default: return 'text-base';
-    }
-  };
-
-  const buttonContent = (
-    <Button
-      variant={variant}
-      onClick={handleClick}
-      className={cn(
-        "relative transition-all duration-200 hover:scale-105",
-        getButtonSize(),
-        showText && "gap-2",
-        className
-      )}
+  return (
+    <motion.div
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      transition={{ type: "spring", stiffness: 400, damping: 17 }}
+      className="relative"
     >
-      <div className="relative">
-        <Heart
-          className={cn(
-            getTextSize(),
-            "transition-colors",
-            variant === 'default' ? 'text-white' : 'text-current'
-          )}
-          size={getIconSize()}
-        />
+      <Button
+        variant={variant}
+        size="icon"
+        onClick={handleClick}
+        className={cn(
+          "relative transition-all duration-200 group",
+          "hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500/20",
+          "rounded-xl border-0",
+          count > 0 && "text-red-500/90",
+          button,
+          padding,
+          className
+        )}
+        aria-label={`Wishlist ${count > 0 ? `with ${count} items` : ''}`}
+      >
+        {/* Larger Heart Icon */}
+        <Heart className={cn(
+          "transition-transform duration-200 group-hover:scale-110",
+          "stroke-[1.5px]", // Thicker stroke for consistency
+          "fill-transparent group-hover:fill-red-200",
+          icon
+        )} />
+
+        {/* Enhanced Hover Overlay */}
+        <div className="absolute inset-0 rounded-xl bg-red-500/0 group-hover:bg-red-500/5 transition-colors duration-200" />
+      </Button>
+
+      {/* Count Badge */}
+      <AnimatePresence>
         {showBadge && count > 0 && (
-          <Badge
-            variant="destructive"
+          <motion.div
+            initial={{ scale: 0, opacity: 0, y: 5 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0, opacity: 0, y: 5 }}
+            transition={{
+              type: "spring",
+              stiffness: 500,
+              damping: 15,
+              duration: 0.2
+            }}
             className={cn(
-              "absolute -top-2 -right-2 min-w-5 h-5 flex items-center justify-center text-xs px-1",
-              size === 'sm' ? 'text-[10px] min-w-4 h-4' : ''
+              "absolute z-10 flex items-center justify-center",
+              "bg-gradient-to-br from-red-500 to-red-600 text-white rounded-full",
+              "border-2 border-white shadow-lg font-medium select-none",
+              badge
             )}
           >
             {count > 99 ? '99+' : count}
-          </Badge>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
+    </motion.div>
+  );
+};
 
-      {showText && (
-        <span className={cn("font-medium", getTextSize())}>
-          Wishlist
-        </span>
+// Skeleton Component
+const WishlistButtonSkeleton: React.FC<{ size?: 'sm' | 'md' | 'lg' | 'xl' }> = ({ size = 'lg' }) => {
+  const sizeClasses = {
+    sm: 'w-10 h-10',
+    md: 'w-11 h-11',
+    lg: 'w-12 h-12',
+    xl: 'w-14 h-14'
+  };
+
+  return (
+    <Skeleton
+      className={cn(
+        "rounded-xl",
+        sizeClasses[size]
       )}
-    </Button>
-  );
-
-  return (
-    <TooltipProvider>
-      <Tooltip delayDuration={200}>
-        <TooltipTrigger asChild>
-          {buttonContent}
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>View your wishlist ({count} items)</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-};
-
-// Header version for navigation
-export const HeaderWishlistButton: React.FC = () => {
-  return (
-    <WishlistNavButton
-      variant="ghost"
-      size="sm"
-      showBadge={true}
-      showText={false}
-      className="hover:bg-red-50 hover:text-red-600 transition-colors"
     />
   );
 };
 
-// Sidebar version
-export const SidebarWishlistButton: React.FC = () => {
-  return (
-    <WishlistNavButton
-      variant="ghost"
-      size="md"
-      showBadge={true}
-      showText={true}
-      className="w-full justify-start hover:bg-red-50 hover:text-red-600 transition-colors"
-    />
-  );
-};
-
-// Floating action button
-export const FloatingWishlistButton: React.FC = () => {
-  return (
-    <div className="fixed bottom-6 right-6 z-50">
-      <WishlistNavButton
-        variant="default"
-        size="lg"
-        showBadge={true}
-        showText={false}
-        className="rounded-full shadow-lg hover:shadow-xl bg-red-500 hover:bg-red-600 text-white"
-      />
-    </div>
-  );
-};
-
-export default WishlistNavButton;
+export default WishlistButton;

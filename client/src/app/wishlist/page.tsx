@@ -1,14 +1,12 @@
 // app/wishlist/page.tsx
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useWishlist } from '@/lib/hooks/useWishlist';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useCart } from '@/lib/hooks/useCart';
-import { WishlistItem } from '@/components/wishlist/WishlistItem';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Heart,
@@ -18,10 +16,9 @@ import {
   Merge,
   LogIn,
   Search,
-  Filter,
   ShoppingCart,
-  CheckCircle,
-  Loader2
+  Loader2,
+  X,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
@@ -33,6 +30,14 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/lib/hooks/useToast';
 import Link from 'next/link';
+import ProductCard from '@/components/common/ProductCard';
+
+interface ActionState {
+  clearing: boolean;
+  merging: boolean;
+  addingAll: boolean;
+  removingProducts: Set<string>;
+}
 
 export default function WishlistPage() {
   const {
@@ -40,470 +45,443 @@ export default function WishlistPage() {
     totalItems,
     loading,
     needsWishlistMerge,
-    mergeStatus,
     clearWishlist,
     handleMergeWishlists,
-    refreshWishlist
+    removeFromWishlist
   } = useWishlist();
 
-  const { isAuthenticated, user } = useAuth();
-  const { addToCart, updateQuantity, items: cartItems, loading: cartLoading } = useCart();
+  const { isAuthenticated } = useAuth();
+  const { addToCart } = useCart();
   const { success, error } = useToast();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('recent');
-  const [clearing, setClearing] = useState(false);
-  const [merging, setMerging] = useState(false);
-  const [addingToCart, setAddingToCart] = useState<{ [key: string]: boolean }>({});
-  const [addedToCart, setAddedToCart] = useState<{ [key: string]: boolean }>({});
-
-  // Filter and sort items
-  const filteredItems = items.filter(item => {
-    const product = item.product || item;
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      product.title.toLowerCase().includes(searchLower) ||
-      product.brand?.toLowerCase().includes(searchLower) ||
-      product.category?.toLowerCase().includes(searchLower)
-    );
+  const [actionState, setActionState] = useState<ActionState>({
+    clearing: false,
+    merging: false,
+    addingAll: false,
+    removingProducts: new Set(),
   });
 
-  const sortedItems = [...filteredItems].sort((a, b) => {
-    const productA = a.product || a;
-    const productB = b.product || b;
+  // Process wishlist items
+  const { products, filteredProducts, sortedProducts } = useMemo(() => {
+    // Extract products from wishlist items
+    const products = items.map(item => ({
+      ...(item.product || item),
+      wishlistItemId: item.id || item._id,
+      addedAt: item.addedAt || item.createdAt,
+    }));
 
-    switch (sortBy) {
-      case 'recent':
-        return new Date(b.addedAt || b.createdAt).getTime() - new Date(a.addedAt || a.createdAt).getTime();
-      case 'price-low':
-        return (productA.price || 0) - (productB.price || 0);
-      case 'price-high':
-        return (productB.price || 0) - (productA.price || 0);
-      case 'name':
-        return (productA.title || '').localeCompare(productB.title || '');
-      case 'rating':
-        return (productB.rating?.average || 0) - (productA.rating?.average || 0);
-      default:
-        return 0;
-    }
-  });
+    // Filter products
+    const filteredProducts = searchTerm ? products.filter(product => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        product.title.toLowerCase().includes(searchLower) ||
+        product.brand?.toLowerCase().includes(searchLower) ||
+        product.category?.toLowerCase().includes(searchLower)
+      );
+    }) : products;
 
-  useEffect(() => {
-    // Refresh wishlist when component mounts if authenticated
-    if (isAuthenticated) {
-      refreshWishlist();
-    }
-  }, [isAuthenticated, refreshWishlist]);
+    // Sort products
+    const sortedProducts = [...filteredProducts].sort((a, b) => {
+      switch (sortBy) {
+        case 'recent':
+          return new Date(b.addedAt || 0).getTime() - new Date(a.addedAt || 0).getTime();
+        case 'price-low':
+          return (a.price || 0) - (b.price || 0);
+        case 'price-high':
+          return (b.price || 0) - (a.price || 0);
+        case 'name':
+          return (a.title || '').localeCompare(b.title || '');
+        case 'rating':
+          return (b.rating?.average || 0) - (a.rating?.average || 0);
+        default:
+          return 0;
+      }
+    });
 
+    return { products, filteredProducts, sortedProducts };
+  }, [items, searchTerm, sortBy]);
+
+  // Action handlers
   const handleClearWishlist = async () => {
-    if (clearing || items.length === 0) return;
+    if (actionState.clearing || items.length === 0) return;
 
-    setClearing(true);
+    setActionState(prev => ({ ...prev, clearing: true }));
     try {
       await clearWishlist();
       success('Wishlist cleared successfully');
     } catch (err) {
       error('Failed to clear wishlist');
     } finally {
-      setClearing(false);
+      setActionState(prev => ({ ...prev, clearing: false }));
     }
   };
 
   const handleMerge = async () => {
-    if (merging) return;
+    if (actionState.merging) return;
 
-    setMerging(true);
+    setActionState(prev => ({ ...prev, merging: true }));
     try {
       const result = await handleMergeWishlists();
       if (result.success) {
         success(result.message || 'Wishlists merged successfully');
       }
     } catch (err) {
-      // Error is handled in the hook
+      // Error handled in hook
     } finally {
-      setMerging(false);
+      setActionState(prev => ({ ...prev, merging: false }));
     }
   };
 
-  // Handle Add to Cart from Wishlist
-  const handleAddToCart = async (item: any) => {
-    const product = item.product || item;
-    const itemId = item.id || item._id;
+  const handleAddAllToCart = async () => {
+    if (actionState.addingAll || filteredProducts.length === 0) return;
 
-    if (addingToCart[itemId]) return;
-
-    setAddingToCart(prev => ({ ...prev, [itemId]: true }));
-
+    setActionState(prev => ({ ...prev, addingAll: true }));
     try {
-      const result = await addToCart({
-        product,
-        quantity: 1
-      });
+      let successCount = 0;
 
-      if (result) {
-        setAddedToCart(prev => ({ ...prev, [itemId]: true }));
-        success(`Added ${product.title} to cart!`);
+      for (const product of filteredProducts) {
+        try {
+          await addToCart({ product, quantity: 1 });
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to add ${product.title} to cart`);
+        }
+      }
 
-        // Reset the added state after 2 seconds
-        setTimeout(() => {
-          setAddedToCart(prev => ({ ...prev, [itemId]: false }));
-        }, 2000);
+      if (successCount > 0) {
+        success(`Added ${successCount} item${successCount === 1 ? '' : 's'} to cart!`);
+      } else {
+        error('Failed to add any items to cart');
       }
     } catch (err) {
-      error('Failed to add item to cart');
-    } finally {
-      setAddingToCart(prev => ({ ...prev, [itemId]: false }));
-    }
-  };
-
-  // Handle Add All to Cart with proper deduplication
-  const handleAddAllToCart = async () => {
-    if (filteredItems.length === 0) return;
-
-    let successCount = 0;
-    let updatedCount = 0;
-
-    for (const item of filteredItems) {
-      const product = item.product || item;
-      const itemId = item.id || item._id;
-
-      try {
-        // Use the addToCart function which handles deduplication internally
-        const result = await addToCart({
-          product,
-          quantity: 1
-        });
-
-        if (result) {
-          successCount++;
-        }
-      } catch (err) {
-        console.error(`Failed to add ${product.title} to cart`);
-      }
-    }
-
-    if (successCount > 0) {
-      success(`Added ${successCount} item${successCount === 1 ? '' : 's'} to cart!`);
-    } else {
       error('Failed to add items to cart');
+    } finally {
+      setActionState(prev => ({ ...prev, addingAll: false }));
     }
   };
 
-  // Loading skeleton
-  if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Header Skeleton */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8">
-            <div className="space-y-2">
-              <Skeleton className="h-8 w-64" />
-              <Skeleton className="h-4 w-48" />
-            </div>
-            <Skeleton className="h-10 w-32 mt-4 lg:mt-0" />
-          </div>
+  const handleRemoveFromWishlist = async (productId: string, productTitle?: string) => {
+    if (actionState.removingProducts.has(productId)) return;
 
-          {/* Controls Skeleton */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <Skeleton className="h-10 flex-1" />
-            <Skeleton className="h-10 w-40" />
-          </div>
+    setActionState(prev => ({
+      ...prev,
+      removingProducts: new Set(prev.removingProducts).add(productId)
+    }));
 
-          {/* Items Skeleton */}
-          <div className="grid gap-4">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-32 w-full" />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    try {
+      await removeFromWishlist(productId, productTitle);
+    } finally {
+      setActionState(prev => {
+        const newRemoving = new Set(prev.removingProducts);
+        newRemoving.delete(productId);
+        return { ...prev, removingProducts: newRemoving };
+      });
+    }
+  };
+
+  const handleQuickAddToCart = async (product: any) => {
+    try {
+      await addToCart({ product, quantity: 1 });
+      success(`Added ${product.title} to cart!`);
+    } catch (err) {
+      error('Failed to add item to cart');
+    }
+  };
+
+  // Loading state
+  if (loading && items.length === 0) {
+    return <WishlistSkeleton />;
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8">
-            <div className="flex items-center gap-4 mb-4 lg:mb-0">
-              <div className="p-3 bg-primary/10 rounded-full">
-                <Heart className="w-8 h-8 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-foreground">
-                  My Wishlist
-                </h1>
-                <p className="text-muted-foreground mt-1">
-                  {totalItems} {totalItems === 1 ? 'item' : 'items'} saved for later
-                </p>
-              </div>
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8">
+          <div className="flex items-center gap-4 mb-4 lg:mb-0">
+            <div className="p-3 bg-primary/10 rounded-full">
+              <Heart className="w-8 h-8 text-primary" />
             </div>
-
-            <div className="flex flex-wrap gap-3">
-              {needsWishlistMerge && (
-                <Button
-                  onClick={handleMerge}
-                  disabled={merging}
-                  variant="outline"
-                  className="border-primary text-primary hover:bg-primary/10"
-                >
-                  {merging ? (
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      <span>Merging...</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <Merge className="w-4 h-4" />
-                      <span>Merge Items</span>
-                    </div>
-                  )}
-                </Button>
-              )}
-
-              {filteredItems.length > 0 && (
-                <>
-                  <Button
-                    onClick={handleAddAllToCart}
-                    disabled={cartLoading}
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    {cartLoading ? (
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Adding...</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <ShoppingCart className="w-4 h-4" />
-                        <span>Add All to Cart</span>
-                      </div>
-                    )}
-                  </Button>
-
-                  <Button
-                    onClick={handleClearWishlist}
-                    disabled={clearing}
-                    variant="outline"
-                    className="text-destructive border-destructive/20 hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    {clearing ? (
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        <span>Clearing...</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <Trash2 className="w-4 h-4" />
-                        <span>Clear All</span>
-                      </div>
-                    )}
-                  </Button>
-                </>
-              )}
-
-              <Button asChild>
-                <Link href="/shop">
-                  <ShoppingBag className="w-4 h-4 mr-2" />
-                  Continue Shopping
-                </Link>
-              </Button>
+            <div>
+              <h1 className="text-3xl font-bold">My Wishlist</h1>
+              <p className="text-muted-foreground mt-1">
+                {totalItems} {totalItems === 1 ? 'item' : 'items'} saved for later
+              </p>
             </div>
           </div>
 
-          {/* Merge Notification */}
-          {needsWishlistMerge && (
-            <Card className="mb-6 border-primary/20 bg-primary/5">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Merge className="w-5 h-5 text-primary" />
-                    <div>
-                      <p className="font-medium text-foreground">
-                        Merge your wishlist items
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        You have {items.length} items in your guest wishlist. Merge them to your account to save them permanently.
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={handleMerge}
-                    disabled={merging}
-                    size="sm"
-                  >
-                    {merging ? 'Merging...' : 'Merge Now'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Authentication Prompt */}
-          {!isAuthenticated && items.length > 0 && (
-            <Card className="mb-6 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <LogIn className="w-5 h-5 text-amber-600" />
-                    <div>
-                      <p className="font-medium text-foreground">
-                        Save your wishlist permanently
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Create an account or log in to save your wishlist items across devices.
-                      </p>
-                    </div>
-                  </div>
-                  <Button asChild variant="outline" className="border-amber-300 text-amber-700">
-                    <Link href="/auth/login">
-                      Sign In
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Search and Filter Controls */}
-          {items.length > 0 && (
-            <div className="flex flex-col sm:flex-row gap-4 mb-8">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input
-                  placeholder="Search in wishlist..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-full sm:w-40">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="recent">Recently Added</SelectItem>
-                  <SelectItem value="price-low">Price: Low to High</SelectItem>
-                  <SelectItem value="price-high">Price: High to Low</SelectItem>
-                  <SelectItem value="name">Name: A to Z</SelectItem>
-                  <SelectItem value="rating">Highest Rated</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Empty State */}
-          {items.length === 0 && (
-            <Card className="text-center py-16">
-              <CardContent className="space-y-6">
-                <div className="w-24 h-24 mx-auto bg-muted/50 rounded-full flex items-center justify-center">
-                  <Heart className="w-12 h-12 text-muted-foreground/50" />
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-xl font-semibold text-foreground">
-                    Your wishlist is empty
-                  </h3>
-                  <p className="text-muted-foreground max-w-md mx-auto">
-                    Start exploring our products and add items you love to your wishlist for easy access later.
-                  </p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <Button asChild size="lg">
-                    <Link href="/shop">
-                      <ShoppingBag className="w-5 h-5 mr-2" />
-                      Start Shopping
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" size="lg">
-                    <Link href="/shop?filter=featured">
-                      View Featured Products
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Wishlist Items */}
-          {items.length > 0 && (
-            <div className="space-y-4">
-              {/* Results Info */}
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Showing {filteredItems.length} of {totalItems} items
-                  {searchTerm && (
-                    <span> for "<strong>{searchTerm}</strong>"</span>
-                  )}
-                </p>
-                {filteredItems.length !== totalItems && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSearchTerm('')}
-                  >
-                    Clear search
-                  </Button>
+          <div className="flex flex-wrap gap-3">
+            {needsWishlistMerge && (
+              <Button
+                onClick={handleMerge}
+                disabled={actionState.merging}
+                variant="outline"
+                className="border-primary text-primary hover:bg-primary/10"
+              >
+                {actionState.merging ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <Merge className="w-4 h-4 mr-2" />
                 )}
-              </div>
+                {actionState.merging ? 'Merging...' : 'Merge Items'}
+              </Button>
+            )}
 
-              {/* Items Grid */}
-              <div className="space-y-4">
-                {sortedItems.map((item, index) => {
-                  const itemId = item.id || item._id || `wishlist-item-${index}`;
-                  const isAdding = addingToCart[itemId];
-                  const isAdded = addedToCart[itemId];
+            {products.length > 0 && (
+              <>
+                <Button
+                  onClick={handleAddAllToCart}
+                  disabled={actionState.addingAll}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {actionState.addingAll ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : (
+                    <ShoppingCart className="w-4 h-4 mr-2" />
+                  )}
+                  Add All to Cart
+                </Button>
 
-                  return (
-                    <div key={itemId} className="relative">
-                      <WishlistItem
-                        item={item}
-                        onAddToCart={() => handleAddToCart(item)}
-                        isAddingToCart={isAdding}
-                        addedToCart={isAdded}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                <Button
+                  onClick={handleClearWishlist}
+                  disabled={actionState.clearing}
+                  variant="outline"
+                  className="text-destructive border-destructive/20 hover:bg-destructive/10"
+                >
+                  {actionState.clearing ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Clear All
+                </Button>
+              </>
+            )}
 
-              {/* Bottom Actions */}
-              {filteredItems.length > 0 && (
-                <div className="flex flex-col sm:flex-row gap-4 justify-center pt-6 border-t border-border/50">
-                  <Button
-                    onClick={handleAddAllToCart}
-                    disabled={cartLoading}
-                    size="lg"
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    {cartLoading ? (
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>Adding All to Cart...</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <ShoppingCart className="w-5 h-5" />
-                        <span>Add All to Cart ({filteredItems.length} items)</span>
-                      </div>
-                    )}
-                  </Button>
+            <Button asChild>
+              <Link href="/shop">
+                <ShoppingBag className="w-4 h-4 mr-2" />
+                Continue Shopping
+              </Link>
+            </Button>
+          </div>
+        </div>
 
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="lg"
-                  >
-                    <Link href="/shop">
-                      <ShoppingBag className="w-5 h-5 mr-2" />
-                      Discover More Products
-                    </Link>
-                  </Button>
+        {/* Notifications */}
+        {needsWishlistMerge && (
+          <Card className="mb-6 border-primary/20 bg-primary/5">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Merge className="w-5 h-5 text-primary" />
+                  <div>
+                    <p className="font-medium">Merge your wishlist items</p>
+                    <p className="text-sm text-muted-foreground">
+                      You have items in your guest wishlist. Merge them to your account to save them permanently.
+                    </p>
+                  </div>
                 </div>
+                <Button
+                  onClick={handleMerge}
+                  disabled={actionState.merging}
+                  size="sm"
+                >
+                  {actionState.merging ? 'Merging...' : 'Merge Now'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {!isAuthenticated && products.length > 0 && (
+          <Card className="mb-6 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <LogIn className="w-5 h-5 text-amber-600" />
+                  <div>
+                    <p className="font-medium">Save your wishlist permanently</p>
+                    <p className="text-sm text-muted-foreground">
+                      Create an account or log in to save your wishlist items across devices.
+                    </p>
+                  </div>
+                </div>
+                <Button asChild variant="outline" size="sm" className="border-amber-300 text-amber-700">
+                  <Link href="/auth/login">Sign In</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Search and Filter */}
+        {products.length > 0 && (
+          <div className="flex flex-col sm:flex-row gap-4 mb-8">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Input
+                placeholder="Search in wishlist..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-10"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               )}
             </div>
-          )}
+
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recent">Recently Added</SelectItem>
+                <SelectItem value="price-low">Price: Low to High</SelectItem>
+                <SelectItem value="price-high">Price: High to Low</SelectItem>
+                <SelectItem value="name">Name: A to Z</SelectItem>
+                <SelectItem value="rating">Highest Rated</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {products.length === 0 && !loading && (
+          <EmptyWishlistState />
+        )}
+
+        {/* Products Grid */}
+        {products.length > 0 && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Showing {filteredProducts.length} of {totalItems} items
+                {searchTerm && ` for "${searchTerm}"`}
+              </p>
+              {searchTerm && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSearchTerm('')}
+                  className="text-muted-foreground"
+                >
+                  Clear search
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {sortedProducts.map((product, index) => (
+                <ProductCard
+
+                  key={product._id}
+                  product={product}
+                  isRemoving={actionState.removingProducts.has(product._id)}
+                  onRemove={() => handleRemoveFromWishlist(product._id, product.title)}
+                  onAddToCart={() => handleQuickAddToCart(product)}
+                />
+              ))}
+            </div>
+
+            {/* Bottom Actions */}
+            {filteredProducts.length > 0 && (
+              <div className="flex flex-col sm:flex-row gap-4 justify-center pt-8 border-t">
+                <Button
+                  onClick={handleAddAllToCart}
+                  disabled={actionState.addingAll}
+                  size="lg"
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {actionState.addingAll ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      Adding All to Cart...
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingCart className="w-5 h-5 mr-2" />
+                      Add All to Cart ({filteredProducts.length} items)
+                    </>
+                  )}
+                </Button>
+
+                <Button asChild variant="outline" size="lg">
+                  <Link href="/shop">
+                    <ShoppingBag className="w-5 h-5 mr-2" />
+                    Discover More Products
+                  </Link>
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// Empty state component
+function EmptyWishlistState() {
+  return (
+    <Card className="text-center py-16">
+      <CardContent className="space-y-6">
+        <div className="w-24 h-24 mx-auto bg-muted/50 rounded-full flex items-center justify-center">
+          <Heart className="w-12 h-12 text-muted-foreground/50" />
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-xl font-semibold">Your wishlist is empty</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            Start exploring our products and add items you love to your wishlist for easy access later.
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <Button asChild size="lg">
+            <Link href="/shop">
+              <ShoppingBag className="w-5 h-5 mr-2" />
+              Start Shopping
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="lg">
+            <Link href="/shop?filter=featured">
+              View Featured Products
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Skeleton component
+function WishlistSkeleton() {
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+          <Skeleton className="h-10 w-32 mt-4 lg:mt-0" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <div key={i} className="space-y-3">
+              <Skeleton className="aspect-[4/3] w-full rounded-lg" />
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ))}
         </div>
       </div>
     </div>

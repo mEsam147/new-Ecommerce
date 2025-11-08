@@ -31,6 +31,8 @@ import analyticsRoutes from './routes/analytics.js'
 import wishlistRoutes from './routes/wishlists.js'
 import paymentMethodsRoutes from './routes/paymentMethods.js'
 
+import billingRoutes from './routes/billing.js'
+import searchRoutes from './routes/search.js'
 // Load env vars
 dotenv.config()
 
@@ -95,6 +97,7 @@ app.use('/api/reviews', reviewRoutes)
 app.use('/api/payments', paymentRoutes)
 
 app.use('/api/payment-methods', paymentMethodsRoutes)
+app.use('/api/billing', billingRoutes)
 
 app.use('/api/coupons', couponRoutes)
 
@@ -102,6 +105,7 @@ app.use('/api/addresses', addressRoutes)
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/wishlist', wishlistRoutes)
 app.use('/api/reviews', reviewRoutes)
+app.use('/api/search', searchRoutes)
 
 // Health check route
 app.get('/api/health', (req, res) => {

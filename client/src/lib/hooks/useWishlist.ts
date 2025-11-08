@@ -1,7 +1,7 @@
 // lib/hooks/useWishlist.ts
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { useAppSelector, useAppDispatch } from './redux';
 import {
   addToGuestWishlist,
@@ -28,17 +28,39 @@ import { useCart } from './useCart';
 
 interface AddToWishlistParams {
   product: Product;
+  variant?: 'button' | 'icon' | 'card';
 }
 
-export const useWishlist = () => {
+interface UseWishlistOptions {
+  enableAutoRefresh?: boolean;
+  showSuccessToasts?: boolean;
+  showErrorToasts?: boolean;
+}
+
+export const useWishlist = (options: UseWishlistOptions = {}) => {
+  const {
+    enableAutoRefresh = true,
+    showSuccessToasts = true,
+    showErrorToasts = true,
+  } = options;
+
   const dispatch = useAppDispatch();
-  const { success, error } = useToast();
+  const { success, error, info, warning } = useToast();
   const { addToCart } = useCart();
 
   // Get auth state
   const { user, isAuthenticated } = useAppSelector((state: any) => state.auth);
 
-  // Selectors
+  // Use refs to prevent unnecessary re-renders
+  const recentActionsRef = useRef<Set<string>>(new Set());
+  const isMountedRef = useRef(true);
+
+  // Local state for better UX
+  const [localLoading, setLocalLoading] = useState<string | null>(null);
+  const [actionQueue, setActionQueue] = useState<Array<() => Promise<void>>>([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
+
+  // Selectors - memoize these to prevent unnecessary re-renders
   const items = useAppSelector(selectWishlistItems);
   const guestWishlist = useAppSelector(selectGuestWishlist);
   const userWishlist = useAppSelector(selectUserWishlist);
@@ -54,55 +76,136 @@ export const useWishlist = () => {
   const [clearWishlistApi] = wishlistApi.useClearWishlistMutation();
   const [moveToCartApi] = wishlistApi.useMoveToCartMutation();
 
-  // Add to wishlist
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Auto-refresh on auth changes - FIXED: removed refreshWishlist dependency
+  useEffect(() => {
+    if (enableAutoRefresh && isAuthenticated && isMountedRef.current) {
+      dispatch(fetchWishlist());
+    }
+  }, [isAuthenticated, enableAutoRefresh, dispatch]);
+
+  // Process action queue - FIXED: simplified queue processing
+  useEffect(() => {
+    if (actionQueue.length > 0 && !isProcessingQueue && isMountedRef.current) {
+      setIsProcessingQueue(true);
+      const processNext = async () => {
+        const nextAction = actionQueue[0];
+        try {
+          await nextAction();
+        } catch (err) {
+          console.error('Queue action failed:', err);
+        } finally {
+          if (isMountedRef.current) {
+            setActionQueue(prev => prev.slice(1));
+            setIsProcessingQueue(false);
+          }
+        }
+      };
+      processNext();
+    }
+  }, [actionQueue, isProcessingQueue]);
+
+  // Enhanced add to wishlist with optimistic updates - FIXED: removed problematic dependencies
   const addToWishlist = useCallback(async ({
-    product
+    product,
+    variant = 'button'
   }: AddToWishlistParams) => {
-    try {
-      console.log('💝 useWishlist.addToWishlist - Starting, product:', product._id);
+    const productId = product._id;
+    const actionKey = `add-${productId}`;
 
-      if (isAuthenticated && user) {
-        console.log('💝 useWishlist.addToWishlist - User authenticated, using API');
-        await addToWishlistApi({ productId: product._id }).unwrap();
-
-        // Refresh the wishlist to get updated data
-        await dispatch(fetchWishlist());
-
-        success(`Added ${product.title} to wishlist!`);
-        return true;
-      } else {
-        console.log('💝 useWishlist.addToWishlist - Guest mode, using local storage');
-        dispatch(addToGuestWishlist({
-          productId: product._id,
-          product: {
-            _id: product._id,
-            title: product.title,
-            images: product.images,
-            inventory: product.inventory,
-            price: product.price,
-            comparePrice: product.comparePrice,
-            rating: product.rating,
-            isActive: product.isActive,
-          },
-        }));
-
-        success(`Added ${product.title} to wishlist!`);
-        return true;
-      }
-    } catch (err: any) {
-      console.error('💝 useWishlist.addToWishlist - Error:', err);
-      const errorMessage = err?.data?.message || err?.message || 'Failed to add item to wishlist';
-
-      // Don't show error if item is already in wishlist (it's a user-friendly state)
-      if (!errorMessage.includes('already in wishlist')) {
-        error(errorMessage);
+    // Prevent duplicate actions
+    if (localLoading === productId || recentActionsRef.current.has(actionKey)) {
+      if (showSuccessToasts) {
+        info('Already in your wishlist!');
       }
       return false;
     }
-  }, [dispatch, isAuthenticated, user, addToWishlistApi, success, error]);
 
-  // Remove from wishlist
-  const removeFromWishlist = useCallback(async (productId: string) => {
+    setLocalLoading(productId);
+    recentActionsRef.current.add(actionKey);
+
+    try {
+      // Optimistic update
+      const optimisticProduct = {
+        productId: product._id,
+        product: {
+          _id: product._id,
+          title: product.title,
+          images: product.images,
+          inventory: product.inventory,
+          price: product.price,
+          comparePrice: product.comparePrice,
+          rating: product.rating,
+          isActive: product.isActive,
+          brand: product.brand,
+          slug: product.slug,
+          category: product.category,
+        },
+        addedAt: new Date().toISOString(),
+      };
+
+      if (isAuthenticated && user) {
+        await addToWishlistApi({ productId }).unwrap();
+        await dispatch(fetchWishlist());
+
+        if (showSuccessToasts) {
+          success(`❤️ Added ${product.title} to wishlist!`);
+        }
+      } else {
+        dispatch(addToGuestWishlist(optimisticProduct));
+
+        if (showSuccessToasts) {
+          success(`❤️ Added ${product.title} to wishlist!`, {
+            action: {
+              label: 'Sign In to Save',
+              onClick: () => window.location.href = '/auth/login'
+            }
+          });
+        }
+      }
+
+      return true;
+    } catch (err: any) {
+      console.error('Add to wishlist error:', err);
+
+      // Revert optimistic update
+      if (!isAuthenticated) {
+        dispatch(removeFromGuestWishlist(productId));
+      }
+
+      const errorMessage = err?.data?.message || err?.message || 'Failed to add item to wishlist';
+
+      if (showErrorToasts) {
+        if (errorMessage.includes('already in wishlist')) {
+          info('Already in your wishlist!');
+        } else {
+          error(`Failed to add to wishlist: ${errorMessage}`);
+        }
+      }
+      return false;
+    } finally {
+      if (isMountedRef.current) {
+        setLocalLoading(null);
+        // Clear recent action after a delay
+        setTimeout(() => {
+          recentActionsRef.current.delete(actionKey);
+        }, 2000);
+      }
+    }
+  }, [isAuthenticated, user, addToWishlistApi, dispatch, success, error, info, showSuccessToasts, showErrorToasts]);
+
+  // Enhanced remove from wishlist - FIXED: simplified
+  const removeFromWishlist = useCallback(async (productId: string, productTitle?: string) => {
+    if (localLoading === productId) return false;
+
+    setLocalLoading(productId);
+
     try {
       if (isAuthenticated && user) {
         await removeFromWishlistApi(productId).unwrap();
@@ -111,17 +214,42 @@ export const useWishlist = () => {
         dispatch(removeFromGuestWishlist(productId));
       }
 
-      success('Item removed from wishlist');
+      if (showSuccessToasts) {
+        success(productTitle
+          ? `Removed ${productTitle} from wishlist`
+          : 'Item removed from wishlist'
+        );
+      }
+
       return true;
     } catch (err: any) {
       const errorMessage = err?.data?.message || 'Failed to remove item from wishlist';
-      error(errorMessage);
+      if (showErrorToasts) {
+        error(errorMessage);
+      }
       return false;
+    } finally {
+      if (isMountedRef.current) {
+        setLocalLoading(null);
+      }
     }
-  }, [dispatch, isAuthenticated, user, removeFromWishlistApi, success, error]);
+  }, [isAuthenticated, user, removeFromWishlistApi, dispatch, success, error, showSuccessToasts, showErrorToasts]);
 
-  // Clear entire wishlist
+  // Enhanced clear wishlist - FIXED: simplified
   const clearWishlist = useCallback(async () => {
+    if (items.length === 0) {
+      if (showSuccessToasts) {
+        info('Wishlist is already empty');
+      }
+      return true;
+    }
+
+    // Add confirmation for clearing large wishlists
+    if (items.length > 3 && showSuccessToasts) {
+      const confirmed = window.confirm(`Are you sure you want to remove all ${items.length} items from your wishlist?`);
+      if (!confirmed) return false;
+    }
+
     try {
       if (isAuthenticated && user) {
         await clearWishlistApi().unwrap();
@@ -130,90 +258,76 @@ export const useWishlist = () => {
         dispatch(clearGuestWishlist());
       }
 
-      success('Wishlist cleared');
+      if (showSuccessToasts) {
+        success(`Cleared ${items.length} items from wishlist`);
+      }
+
       return true;
     } catch (err: any) {
       const errorMessage = err?.data?.message || 'Failed to clear wishlist';
-      error(errorMessage);
-      return false;
-    }
-  }, [dispatch, isAuthenticated, user, clearWishlistApi, success, error]);
-
-  // Move item to cart
-  const moveToCart = useCallback(async (productId: string, size?: string, color?: string, quantity?: number) => {
-    try {
-      if (isAuthenticated && user) {
-        // Use the API to move to cart
-        await moveToCartApi({ productId, size, color, quantity }).unwrap();
-
-        // Refresh wishlist to remove the item
-        await dispatch(fetchWishlist());
-
-        success('Item moved to cart successfully!');
-      } else {
-        // For guest users, add to cart and remove from wishlist
-        const product = items.find((item: any) =>
-          item.productId === productId || item.product?._id === productId
-        )?.product;
-
-        if (product) {
-          await addToCart({ product, quantity: quantity || 1, size, color });
-          await removeFromWishlist(productId);
-        }
+      if (showErrorToasts) {
+        error(errorMessage);
       }
-
-      return true;
-    } catch (err: any) {
-      const errorMessage = err?.data?.message || 'Failed to move item to cart';
-      error(errorMessage);
       return false;
     }
-  }, [dispatch, isAuthenticated, user, moveToCartApi, addToCart, removeFromWishlist, items, success, error]);
+  }, [dispatch, isAuthenticated, user, clearWishlistApi, success, error, info, items.length, showSuccessToasts, showErrorToasts]);
 
-  // Merge guest wishlist with user wishlist
+  // Enhanced merge wishlists - FIXED: simplified
   const handleMergeWishlists = useCallback(async () => {
+    if (!needsWishlistMerge) {
+      if (showSuccessToasts) {
+        info('No wishlist items to merge');
+      }
+      return { success: true, message: 'No wishlist merge needed' };
+    }
+
     try {
-      if (!needsWishlistMerge) {
-        return { success: true, message: 'No wishlist merge needed' };
+      if (showSuccessToasts) {
+        info('Merging your wishlist items...');
       }
 
       const result = await dispatch(mergeWishlists()).unwrap();
-      success('Your wishlist items have been merged successfully!');
-      return { success: true, data: result };
+
+      if (showSuccessToasts) {
+        success(`✅ ${result.mergedCount} items added to your wishlist!`);
+      }
+
+      return {
+        success: true,
+        data: result,
+        message: `Successfully merged ${result.mergedCount} items`
+      };
     } catch (err: any) {
       const errorMessage = err?.data?.message || 'Failed to merge wishlists';
-      error(errorMessage);
-      return { success: false, error: errorMessage };
+      if (showErrorToasts) {
+        error(errorMessage);
+      }
+      return {
+        success: false,
+        error: errorMessage,
+        message: 'Failed to merge wishlists'
+      };
     }
-  }, [dispatch, needsWishlistMerge, success, error]);
+  }, [dispatch, needsWishlistMerge, success, error, info, showSuccessToasts, showErrorToasts]);
 
-  // Sync guest wishlist
-  const syncWishlist = useCallback(async () => {
-    try {
-      await dispatch(syncGuestWishlist()).unwrap();
-      success('Wishlist synced successfully!');
-      return true;
-    } catch (err: any) {
-      const errorMessage = err?.data?.message || 'Failed to sync wishlist';
-      error(errorMessage);
-      return false;
-    }
-  }, [dispatch, success, error]);
-
-  // Refresh wishlist data
-  const refreshWishlist = useCallback(async () => {
-    if (isAuthenticated) {
+  // Enhanced refresh - FIXED: simplified
+  const refreshWishlist = useCallback(async (force = false) => {
+    if (isAuthenticated && isMountedRef.current) {
       try {
-        console.log('💝 Refreshing wishlist...');
         await dispatch(fetchWishlist()).unwrap();
-        console.log('💝 Wishlist refresh completed');
+        return true;
       } catch (err) {
-        console.error('💝 Failed to refresh wishlist:', err);
+        console.error('Failed to refresh wishlist:', err);
+        if (showErrorToasts) {
+          error('Failed to refresh wishlist');
+        }
+        return false;
       }
     }
-  }, [dispatch, isAuthenticated]);
+    return true;
+  }, [dispatch, isAuthenticated, error, showErrorToasts]);
 
-  // Check if product is in wishlist
+  // Check if product is in wishlist - FIXED: use selector directly
   const isInWishlist = useCallback((productId: string) => {
     return (state: any) => selectIsInWishlist(productId)(state);
   }, []);
@@ -225,18 +339,32 @@ export const useWishlist = () => {
     );
   }, [items]);
 
-  // Memoized wishlist state
+  // Check if specific product is being processed
+  const isProductLoading = useCallback((productId: string) =>
+    localLoading === productId,
+    [localLoading]
+  );
+
+  // Memoized wishlist state with enhanced properties - FIXED: simplified
   const wishlistState = useMemo(() => ({
+    // State
     items,
     guestWishlist,
     userWishlist,
     totalItems,
-    loading,
+    loading: loading || syncing || localLoading !== null,
     syncing,
     needsWishlistMerge,
     mergeStatus,
-    isEmpty: items.length === 0
-  }), [items, guestWishlist, userWishlist, totalItems, loading, syncing, needsWishlistMerge, mergeStatus]);
+    isEmpty: items.length === 0,
+
+    // Enhanced properties
+    hasItems: items.length > 0,
+    itemCount: items.length,
+  }), [
+    items, guestWishlist, userWishlist, totalItems, loading, syncing,
+    needsWishlistMerge, mergeStatus, localLoading
+  ]);
 
   return {
     // State
@@ -246,16 +374,14 @@ export const useWishlist = () => {
     addToWishlist,
     removeFromWishlist,
     clearWishlist,
-    moveToCart,
     handleMergeWishlists,
-    syncWishlist,
     refreshWishlist,
 
     // Utilities
     isInWishlist,
     getItemById,
+    isProductLoading,
     isAuthenticated,
-    hasItems: items.length > 0
   };
 };
 
