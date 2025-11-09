@@ -56,7 +56,7 @@ const ProductListSec = ({ title, data, viewAllLink }: ProductListSecProps) => {
             className="w-full mb-6 md:mb-9 cursor-grab active:cursor-grabbing"
           >
             <CarouselContent className="mx-4 xl:mx-0 space-x-4 sm:space-x-5">
-              {data.map((product) => (
+              {data?.map((product) => (
                 <CarouselItem
                   key={product.id}
                   className="w-full max-w-[200px] sm:max-w-[300px] pl-0"

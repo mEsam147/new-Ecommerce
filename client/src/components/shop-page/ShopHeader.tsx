@@ -1,4 +1,3 @@
-// components/shop/ShopHeader.tsx
 'use client';
 
 import React from 'react';
@@ -10,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search } from 'lucide-react';
+import { Search, Star } from 'lucide-react';
 
 interface ShopHeaderProps {
   filters: any;
@@ -51,14 +50,29 @@ export const ShopHeader: React.FC<ShopHeaderProps> = ({
       {/* Results Count */}
       <div className="space-y-1">
         <h1 className="text-xl font-semibold text-gray-900">
-          {filters.category ? `${filters.category}` : 'All Products'}
+          {filters.featured ? (
+            <span className="flex items-center gap-2">
+              <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+              Featured Products
+            </span>
+          ) : filters.category ? (
+            `${filters.category}`
+          ) : (
+            'All Products'
+          )}
         </h1>
-        <div className="flex items-center gap-2 text-sm text-gray-600">
+        <div className="flex items-center gap-2 text-sm text-gray-600 flex-wrap">
           <span>{showingProducts} of {totalProducts} products</span>
           {filters.search && (
             <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs">
               <Search className="w-3 h-3" />
               "{filters.search}"
+            </span>
+          )}
+          {filters.featured && (
+            <span className="inline-flex items-center gap-1 bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-xs">
+              <Star className="w-3 h-3 fill-yellow-500" />
+              Featured
             </span>
           )}
         </div>
@@ -68,8 +82,8 @@ export const ShopHeader: React.FC<ShopHeaderProps> = ({
       <div className="flex items-center gap-2">
         <span className="text-sm text-gray-600 whitespace-nowrap">Sort:</span>
         <Select
-          value={filters.sortBy}
-          onValueChange={(value) => onFilterChange({ sortBy: value })}
+          value={filters.sort} // Changed from filters.sortBy to filters.sort
+          onValueChange={(value) => onFilterChange({ sort: value })} // Changed from sortBy to sort
         >
           <SelectTrigger className="w-40 bg-white">
             <SelectValue />

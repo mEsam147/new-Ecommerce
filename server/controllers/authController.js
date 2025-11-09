@@ -226,13 +226,43 @@ import cloudinary from '../utils/cloudinary.js' // تأكد من وجود الم
 /* -------------------------------------------------------------------------- */
 /*                           HELPER: SEND TOKEN RESPONSE                      */
 /* -------------------------------------------------------------------------- */
+// const sendTokenResponse = (user, statusCode, res) => {
+//   const token = generateToken(user._id)
+
+//   const cookieOptions = {
+//     httpOnly: true,
+//     secure: process.env.NODE_ENV === 'production',
+//     sameSite: 'strict',
+//     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+//   }
+
+//   res.cookie('jwt', token, cookieOptions)
+//   user.password = undefined
+
+//   res.status(statusCode).json({
+//     success: true,
+//     data: {
+//       user: {
+//         id: user._id,
+//         name: user.name,
+//         email: user.email,
+//         role: user.role,
+//         avatar: user.avatar,
+//       },
+//       token,
+//     },
+//     message: statusCode === 201 ? 'User registered successfully' : 'Login successful',
+//   })
+// }
 const sendTokenResponse = (user, statusCode, res) => {
   const token = generateToken(user._id)
 
+  const isProduction = process.env.NODE_ENV === 'production'
+
   const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure: isProduction, // 🔒 لازم HTTPS في الإنتاج
+    sameSite: isProduction ? 'none' : 'lax', // ✅ مهم للتوافق
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   }
 

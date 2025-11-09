@@ -111,22 +111,114 @@ export interface ProductsResponse {
   };
 }
 
+
+
+// types/product.ts
+export interface ProductImage {
+  public_id: string;
+  url: string;
+  alt?: string;
+  isPrimary: boolean;
+  _id: string;
+}
+
+export interface ProductVariant {
+  size: string;
+  color: string;
+  stock: number;
+  sku: string;
+  price: number;
+  _id: string;
+}
+
+export interface ProductSpecifications {
+  weight: string;
+  dimensions: string;
+  warranty: string;
+  material: string;
+  color: string;
+  additional?: Record<string, string>;
+}
+
+export interface ProductInventory {
+  trackQuantity: boolean;
+  quantity: number;
+  lowStockAlert: number;
+}
+
+export interface ProductShipping {
+  weight: number;
+  dimensions?: {
+    length: number;
+    width: number;
+    height: number;
+  };
+  freeShipping: boolean;
+}
+
+export interface ProductRatingDistribution {
+  1: number;
+  2: number;
+  3: number;
+  4: number;
+  5: number;
+}
+
+export interface ProductRating {
+  distribution: ProductRatingDistribution;
+  average: number;
+  count: number;
+}
+
+export interface ProductCoupon {
+  code: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  minPurchase: number;
+  maxDiscount?: number;
+  startDate: string;
+  endDate: string;
+  usageLimit?: number;
+  usedCount: number;
+  isActive: boolean;
+  _id?: string;
+}
+
+
+
+export interface ProductsResponse {
+  success: boolean;
+  data: {
+    products: Product[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      pages: number;
+    };
+  };
+}
+
+export interface ProductResponse {
+  success: boolean;
+  data: Product;
+}
+
 export interface ProductFilters {
   page?: number;
   limit?: number;
+  search?: string;
   category?: string;
   brand?: string;
   minPrice?: number;
   maxPrice?: number;
-  search?: string;
+  isActive?: boolean;
+  isFeatured?: boolean;
   inStock?: boolean;
+  lowStock?: boolean;
   sort?: string;
-  tags?: string[];
-  rating?: number;
-  featured?: boolean;
+  order?: 'asc' | 'desc';
 }
-
-
 
 export interface User {
   id: string;
@@ -483,4 +575,19 @@ export interface DefaultPaymentMethodResponse {
 export interface DeletePaymentMethodResponse {
   success: boolean;
   message: string;
+}
+
+interface ProductFilters {
+  category?: string;
+  search?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  colors?: string[];
+  sizes?: string[];
+  tags?: string[];
+  brand?: string[];
+  sortBy?: string;
+  page?: number;
+  limit?: number;
+  featured?: boolean; // Add featured filter
 }

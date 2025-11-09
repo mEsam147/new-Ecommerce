@@ -590,6 +590,7 @@ import { PopularSearch, SearchResult, SearchSuggestion } from '@/lib/services/se
 import { useSearch, useSearchHistory, useSearchNavigation } from '@/lib/hooks/useSearch';
 import { Badge } from '@/components/ui/badge';
 import Logo from '@/components/common/Logo';
+import Image from 'next/image';
 
 export const Header: React.FC = () => {
   const { navMenu, isLoading: navLoading } = useNavigation();
@@ -956,7 +957,7 @@ const PopularSearches: React.FC<PopularSearchesProps> = ({
         Popular Searches
       </h3>
       <div className="flex flex-wrap gap-2">
-        {popularSearches.map((search) => (
+        {popularSearches?.map((search) => (
           <button
             key={search.term}
             onClick={() => onClick(search.term)}
@@ -1059,7 +1060,10 @@ const SearchResults: React.FC<SearchResultsProps> = ({
                 className="w-full p-3 hover:bg-gray-50 rounded-lg text-left"
               >
                 <div className="flex gap-3">
-                  <img
+                  <Image
+
+
+
                     src={product.images[0]?.url}
                     alt={product.title}
                     className="w-10 h-10 sm:w-12 sm:h-12 rounded object-cover flex-shrink-0"

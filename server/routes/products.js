@@ -48,7 +48,7 @@ router.get('/slug/:slug', getProductBySlug)
 router.use(protect)
 router.use(authorize('admin'))
 
-router.post('/', validateCreateProduct, createProduct)
+router.post('/', createProduct)
 router.put('/:id', validateProductId, validateUpdateProduct, updateProduct)
 router.delete('/:id', validateProductId, deleteProduct)
 router.post(
