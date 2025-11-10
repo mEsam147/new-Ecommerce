@@ -1,74 +1,94 @@
-// lib/hooks/useCartCheckout.ts
+// lib/hooks/useCartCheckout.ts - SIMPLIFIED VERSION
 'use client';
 
-import { useMemo } from 'react';
-import { useCart } from './useCart';
+import { useCallback, useMemo } from 'react';
+import { useAppSelector, useAppDispatch } from './redux';
+import {
+  clearGuestCart,
+  clearAllCarts,
+  selectCartItems,
+  selectCartTotalItems,
+  selectCartSubtotal as selectCartSubtotalRaw
+} from '@/lib/features/carts/cartsSlice';
+import { removeCoupon } from '@/lib/features/coupon/couponSlice';
+import { useToast } from './useToast';
+import { cartApi } from '@/lib/services/cartApi';
 
-/**
- * Hook مخصص لل checkout لضمان استقرار البيانات
- */
 export const useCartCheckout = () => {
-  const cart = useCart();
+  const dispatch = useAppDispatch();
+  const { success, error } = useToast();
 
-  // حساب المجموع الكلي بشكل آمن
-  const checkoutTotals = useMemo(() => {
+  const { user, isAuthenticated } = useAppSelector((state: any) => state.auth);
+
+  // Cart Selectors
+  const items = useAppSelector(selectCartItems);
+  const totalItems = useAppSelector(selectCartTotalItems);
+  const cartSubtotal = useAppSelector(selectCartSubtotalRaw);
+
+  // RTK Query mutations
+  const [clearCartApi] = cartApi.useClearCartMutation();
+
+  // Calculate totals
+  const { subtotal, total, discount, shipping, tax } = useMemo(() => {
+    const subtotal = cartSubtotal;
+    const discount = 0; // You can add coupon logic if needed
+    const shipping = subtotal > 100 ? 0 : 10; // Free shipping over $100
+    const tax = subtotal * 0.08; // 8% tax
+    const total = Math.max(0, subtotal - discount + shipping + tax);
+
+    return {
+      subtotal: Number(subtotal.toFixed(2)),
+      total: Number(total.toFixed(2)),
+      discount: Number(discount.toFixed(2)),
+      shipping: Number(shipping.toFixed(2)),
+      tax: Number(tax.toFixed(2))
+    };
+  }, [cartSubtotal]);
+
+  // Enhanced clear cart function
+  const clearCart = useCallback(async () => {
     try {
-      // استخدام القيم من useCart مع قيم افتراضية آمنة
-      const subtotal = cart.subtotal || 0;
-      const discount = cart.discount || 0;
-      const tax = subtotal * 0.08; // 8% ضريبة
-      const shipping = subtotal > 100 ? 0 : 10; // شحن مجاني فوق 100
+      console.log('🛒 Clearing cart...', { isAuthenticated, itemsCount: items.length });
 
-      const total = Math.max(0, subtotal - discount + shipping + tax);
+      if (isAuthenticated && user) {
+        // For authenticated users - clear via API
+        const result = await clearCartApi().unwrap();
+        console.log('✅ API cart cleared:', result);
+      } else {
+        // For guest users - clear local storage
+        dispatch(clearGuestCart());
+        console.log('✅ Guest cart cleared');
+      }
 
-      return {
-        subtotal: Number(subtotal.toFixed(2)),
-        discount: Number(discount.toFixed(2)),
-        tax: Number(tax.toFixed(2)),
-        shipping: Number(shipping.toFixed(2)),
-        total: Number(total.toFixed(2)),
-        totalItems: cart.totalItems || 0
-      };
-    } catch (error) {
-      console.error('Error calculating checkout totals:', error);
-      return {
-        subtotal: 0,
-        discount: 0,
-        tax: 0,
-        shipping: 0,
-        total: 0,
-        totalItems: 0
-      };
+      // Always remove coupon and clear all cart state
+      dispatch(removeCoupon());
+      dispatch(clearAllCarts()); // This clears both guest and user carts
+
+      console.log('✅ Cart cleared successfully');
+      return true;
+    } catch (err: any) {
+      console.error('❌ Failed to clear cart:', err);
+
+      // Fallback: clear local cart even if API fails
+      dispatch(clearGuestCart());
+      dispatch(clearAllCarts());
+      dispatch(removeCoupon());
+
+      return false;
     }
-  }, [cart.subtotal, cart.discount, cart.totalItems]);
+  }, [dispatch, isAuthenticated, user, clearCartApi]);
 
-  // عناصر العربة بشكل آمن
-  const safeItems = useMemo(() => {
-    return cart.items?.map(item => ({
-      id: item.id || item._id,
-      productId: item.productId || item.product?._id,
-      product: item.product || { title: 'Product', images: [], price: 0 },
-      quantity: item.quantity || 1,
-      price: item.price || 0,
-      size: item.size || item.variant?.size,
-      color: item.color || item.variant?.color
-    })) || [];
-  }, [cart.items]);
+  const isEmpty = useMemo(() => items.length === 0, [items]);
 
   return {
-
-    items: safeItems,
-    isEmpty: safeItems.length === 0,
-
-
-    ...checkoutTotals,
-
-
-    loading: cart.loading || false,
-    isAuthenticated: cart.isAuthenticated || false,
-
-
-    clearCart: cart.clearCart,
-    refreshCart: cart.refreshCart
+    items,
+    isEmpty,
+    subtotal,
+    total,
+    discount,
+    shipping,
+    tax,
+    totalItems,
+    clearCart
   };
 };

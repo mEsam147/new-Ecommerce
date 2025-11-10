@@ -1,5 +1,5 @@
-// routes/orders.js
-import express from 'express';
+// routes/orderRoutes.js
+import express from 'express'
 import {
   createOrder,
   getUserOrders,
@@ -7,30 +7,44 @@ import {
   getAllOrders,
   updateOrderStatus,
   cancelOrder,
-  getOrderStats
-} from '../controllers/orderController.js';
-import { protect, authorize } from '../middleware/auth.js';
+  processRefund,
+  getOrderStats,
+  getOrderInvoice,
+  trackOrder,
+  requestReturn,
+  updateShippingInfo,
+} from '../controllers/orderController.js'
+import { protect, authorize } from '../middleware/auth.js'
 import {
   validateOrderId,
   validateCreateOrder,
   validateOrderStatus,
   validateCancelOrder,
   validatePagination,
-  validateAnalyticsPeriod
-} from '../middleware/validation.js';
+  validateAnalyticsPeriod,
+} from '../middleware/validation.js'
 
-const router = express.Router();
+const router = express.Router()
 
-router.use(protect);
+// All routes protected
+router.use(protect)
 
-router.route('/')
-  .post(validateCreateOrder, createOrder)
-  .get(validatePagination, getUserOrders);
+// User routes
+router.post('/', createOrder)
+router.get('/my-orders', validatePagination, getUserOrders)
+router.get('/:id', validateOrderId, getOrder)
+router.get('/:id/invoice', validateOrderId, getOrderInvoice)
+router.get('/:id/track', validateOrderId, trackOrder)
+router.put('/:id/cancel', validateOrderId, validateCancelOrder, cancelOrder)
+router.post('/:id/return', validateOrderId, requestReturn)
 
-router.get('/admin/all', authorize('admin'), validatePagination, getAllOrders);
-router.get('/stats', authorize('admin'), validateAnalyticsPeriod, getOrderStats);
-router.get('/:id', validateOrderId, getOrder);
-router.put('/:id/status', authorize('admin'), validateOrderId, validateOrderStatus, updateOrderStatus);
-router.put('/:id/cancel', validateOrderId, validateCancelOrder, cancelOrder);
+// Admin routes
+router.use(authorize('admin'))
 
-export default router;
+router.get('/admin/all', validatePagination, getAllOrders)
+router.get('/admin/stats', validateAnalyticsPeriod, getOrderStats)
+router.put('/admin/:id/status', validateOrderId, validateOrderStatus, updateOrderStatus)
+router.put('/admin/:id/shipping', validateOrderId, updateShippingInfo)
+router.post('/admin/:id/refund', validateOrderId, processRefund)
+
+export default router

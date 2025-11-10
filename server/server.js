@@ -74,7 +74,7 @@ app.use(hpp())
 // CORS middleware
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: process.env.CLIENT_URL || 'http://localhost:5000',
     credentials: true, // This is CRITICAL for cookies
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],

@@ -49,7 +49,7 @@ async function getBrandBySlug(slug: string) {
 // Server-side data fetching for brand products by slug
 async function getBrandProductsBySlug(slug: string, searchParams: any) {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
     const queryParams = new URLSearchParams();
 
     if (searchParams.category) queryParams.append('category', searchParams.category);

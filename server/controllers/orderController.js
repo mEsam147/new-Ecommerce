@@ -1,222 +1,257 @@
 // controllers/orderController.js
 import Order from '../models/Order.js'
+import Payment from '../models/Payment.js'
 import Cart from '../models/Cart.js'
 import Product from '../models/Product.js'
 import Coupon from '../models/Coupon.js'
+import User from '../models/User.js'
 import asyncHandler from '../utils/asyncHandler.js'
 import ApiError from '../utils/ApiError.js'
 import ApiFeatures from '../utils/apiFeatures.js'
 import emailService from '../services/emailService.js'
+import inventoryService from '../services/inventoryService.js'
+import paymentService from '../services/paymentService.js'
+import mongoose from 'mongoose'
+import PDFDocument from 'pdfkit'
+import fs from 'fs'
+import path from 'path'
 
 // @desc    Create new order
 // @route   POST /api/orders
 // @access  Private
+// controllers/orderController.js - Improved createOrder
 export const createOrder = asyncHandler(async (req, res) => {
-  const { shippingAddress, billingAddress, paymentMethod, couponCode, notes } = req.body
+  const {
+    shippingAddress,
+    billingAddress,
+    paymentMethod,
+    couponCode,
+    customerNotes,
+    shippingMethod = 'standard',
+  } = req.body
 
   const userId = req.user.id
 
-  // Get user's cart
-  const cart = await Cart.findOne({ user: userId }).populate(
-    'items.product',
-    'title images price variants inventory isActive'
-  )
-
-  if (!cart || cart.items.length === 0) {
-    throw new ApiError(400, 'Cart is empty')
+  // Validate required fields
+  if (!shippingAddress) {
+    throw new ApiError(400, 'Shipping address is required')
   }
 
-  // Validate cart items and calculate totals
-  let itemsPrice = 0
-  const orderItems = []
-  const outOfStockItems = []
-
-  for (const cartItem of cart.items) {
-    const product = cartItem.product
-
-    if (!product) {
-      outOfStockItems.push('Unknown product')
-      continue
-    }
-
-    if (!product.isActive) {
-      outOfStockItems.push(product.title)
-      continue
-    }
-
-    let availableStock = product.inventory.quantity
-    let variantStock = null
-
-    // Check if we're dealing with a variant
-    if (cartItem.variant && cartItem.variant.size && cartItem.variant.color) {
-      // Find the specific variant
-      const variant = product.variants.find(
-        (v) => v.size === cartItem.variant.size && v.color === cartItem.variant.color
-      )
-
-      if (!variant) {
-        outOfStockItems.push(
-          `${product.title} (${cartItem.variant.size}/${cartItem.variant.color})`
-        )
-        continue
-      }
-
-      variantStock = variant.stock
-      availableStock = variantStock
-    }
-
-    // Check stock availability
-    if (availableStock < cartItem.quantity) {
-      outOfStockItems.push(product.title)
-      continue
-    }
-
-    const itemTotal = cartItem.price * cartItem.quantity
-    itemsPrice += itemTotal
-
-    orderItems.push({
-      product: product._id,
-      variant: cartItem.variant || {},
-      name: product.title,
-      image: product.images.find((img) => img.isPrimary)?.url || product.images[0]?.url,
-      price: cartItem.price,
-      quantity: cartItem.quantity,
-      totalPrice: itemTotal,
-    })
+  if (!paymentMethod) {
+    throw new ApiError(400, 'Payment method is required')
   }
 
-  if (outOfStockItems.length > 0) {
-    throw new ApiError(400, `Some items are out of stock: ${outOfStockItems.join(', ')}`)
+  // Validate shipping address structure
+  if (
+    !shippingAddress.name ||
+    !shippingAddress.street ||
+    !shippingAddress.city ||
+    !shippingAddress.state ||
+    !shippingAddress.zipCode
+  ) {
+    throw new ApiError(
+      400,
+      'Complete shipping address (name, street, city, state, zipCode) is required'
+    )
   }
 
-  if (orderItems.length === 0) {
-    throw new ApiError(400, 'No valid items in cart')
-  }
+  const session = await mongoose.startSession()
 
-  // Calculate shipping price (simplified)
-  const shippingPrice = itemsPrice > 100 ? 0 : 10 // Free shipping over $100
-
-  // Calculate tax (simplified - 8%)
-  const taxPrice = itemsPrice * 0.08
-
-  // Apply coupon if provided
-  let discountAmount = 0
-  let couponData = null
-
-  if (couponCode) {
-    try {
-      const coupon = await Coupon.findValidCoupon(couponCode, userId, itemsPrice, orderItems)
-      discountAmount = coupon.calculateDiscount(itemsPrice)
-      couponData = {
-        code: coupon.code,
-        discountType: coupon.discountType,
-        discountValue: coupon.discountValue,
-        discountAmount,
-      }
-    } catch (error) {
-      throw new ApiError(400, error.message)
-    }
-  }
-
-  // Calculate total price
-  const totalPrice = itemsPrice + shippingPrice + taxPrice - discountAmount
-
-  // Create order
-  const order = await Order.create({
-    user: userId,
-    items: orderItems,
-    shippingAddress,
-    billingAddress: billingAddress || shippingAddress,
-    contactInfo: {
-      email: req.user.email,
-      phone: shippingAddress.phone,
-    },
-    paymentMethod,
-    pricing: {
-      itemsPrice,
-      shippingPrice,
-      taxPrice,
-      discountAmount,
-      totalPrice,
-    },
-    coupon: couponData,
-    notes,
-    shipping: {
-      method: itemsPrice > 100 ? 'free' : 'standard',
-    },
-  })
-
-  // Update product inventory
-  for (const item of orderItems) {
-    const product = await Product.findById(item.product)
-
-    if (item.variant && item.variant.size && item.variant.color) {
-      // Update variant stock
-      const variantIndex = product.variants.findIndex(
-        (v) => v.size === item.variant.size && v.color === item.variant.color
-      )
-
-      if (variantIndex !== -1) {
-        product.variants[variantIndex].stock -= item.quantity
-
-        // If tracking overall inventory, update that too
-        if (product.inventory.trackQuantity) {
-          product.inventory.quantity -= item.quantity
-        }
-      }
-    } else {
-      // Update general inventory
-      if (product.inventory.trackQuantity) {
-        product.inventory.quantity -= item.quantity
-      }
-    }
-
-    product.salesCount += item.quantity
-    await product.save()
-  }
-
-  // Clear cart
-  cart.items = []
-  await cart.save()
-
-  // Send order confirmation email
   try {
-    await emailService.sendOrderConfirmation(req.user.email, req.user.name, order)
-  } catch (emailError) {
-    console.error('Failed to send order confirmation email:', emailError)
-    // Don't fail the order if email fails
-  }
+    session.startTransaction()
 
-  res.status(201).json({
-    success: true,
-    data: order,
-    message: 'Order created successfully',
-  })
+    // Get user's cart with product details
+    const cart = await Cart.findOne({ user: userId })
+      .populate('items.product', 'title images price variants inventory isActive weight sku')
+      .session(session)
+
+    if (!cart || cart.items.length === 0) {
+      throw new ApiError(400, 'Cart is empty')
+    }
+
+    // Validate cart items and inventory
+    const validationResult = await inventoryService.validateCartItems(cart.items)
+    if (!validationResult.isValid) {
+      throw new ApiError(400, `Inventory validation failed: ${validationResult.errors.join(', ')}`)
+    }
+
+    // Calculate pricing
+    const pricing = await calculateOrderPricing(
+      validationResult.validItems,
+      shippingMethod,
+      couponCode,
+      userId
+    )
+
+    // Build order items with proper validation
+    const orderItems = validationResult.validItems.map((item) => {
+      const orderItem = {
+        product: item.product._id,
+        variant: item.variant || {},
+        name: item.product.title,
+        image: item.product.images.find((img) => img.isPrimary)?.url || item.product.images[0]?.url,
+        price: Number(item.price),
+        quantity: Number(item.quantity),
+        totalPrice: Number(item.price) * Number(item.quantity),
+        weight: item.product.weight || 0,
+        sku: item.variant?.sku || item.product.sku,
+      }
+
+      // Validate required fields
+      if (!orderItem.name || !orderItem.image || !orderItem.price || !orderItem.quantity) {
+        throw new ApiError(400, `Invalid item data for product: ${item.product.title}`)
+      }
+
+      return orderItem
+    })
+
+    // Create order with all required fields
+    const orderData = {
+      user: userId,
+      items: orderItems,
+      shipping: {
+        method: shippingMethod,
+        cost: pricing.shipping,
+        address: {
+          name: shippingAddress.name,
+          street: shippingAddress.street,
+          city: shippingAddress.city,
+          state: shippingAddress.state,
+          zipCode: shippingAddress.zipCode,
+          country: shippingAddress.country || 'US',
+          phone: shippingAddress.phone || '',
+        },
+      },
+      billingAddress: billingAddress || {
+        name: shippingAddress.name,
+        street: shippingAddress.street,
+        city: shippingAddress.city,
+        state: shippingAddress.state,
+        zipCode: shippingAddress.zipCode,
+        country: shippingAddress.country || 'US',
+        phone: shippingAddress.phone || '',
+      },
+      pricing: {
+        subtotal: pricing.subtotal,
+        shipping: pricing.shipping,
+        tax: pricing.tax,
+        discount: pricing.discount,
+        total: pricing.total,
+        currency: pricing.currency,
+      },
+      payment: {
+        method: paymentMethod,
+        status: 'pending',
+        amount: pricing.total,
+        currency: 'USD',
+      },
+      customerNotes: customerNotes || '',
+      fraudCheck: {
+        status: 'pending',
+        score: await calculateFraudScore(req.user, shippingAddress, pricing.total),
+      },
+    }
+
+    console.log('Creating order with data:', JSON.stringify(orderData, null, 2))
+
+    const order = new Order(orderData)
+
+    // Validate the order before saving
+    const validationError = order.validateSync()
+    if (validationError) {
+      const errors = Object.values(validationError.errors).map((err) => err.message)
+      console.error('Order validation errors:', errors)
+      throw new ApiError(400, `Order validation failed: ${errors.join(', ')}`)
+    }
+
+    await order.save({ session })
+
+    // Rest of your existing code for inventory reservation, cart clearing, etc.
+    await inventoryService.reserveInventory(validationResult.validItems, session)
+
+    // Clear cart
+    await Cart.findByIdAndUpdate(
+      cart._id,
+      { items: [], totalPrice: 0, totalItems: 0, $unset: { appliedCoupon: 1 } },
+      { session }
+    )
+
+    // Handle payment intent creation
+    let paymentIntent = null
+    if (paymentMethod === 'stripe') {
+      paymentIntent = await paymentService.createPaymentIntent({
+        amount: Math.round(pricing.total * 100),
+        currency: 'usd',
+        metadata: {
+          orderId: order._id.toString(),
+          userId: userId,
+        },
+        receipt_email: req.user.email,
+        description: `Order ${order.orderNumber}`,
+      })
+
+      order.payment.paymentIntentId = paymentIntent.id
+      await order.save({ session })
+    }
+
+    await session.commitTransaction()
+
+    // Send order confirmation email
+    try {
+      await emailService.sendOrderConfirmation(req.user.email, req.user.name, order)
+    } catch (emailError) {
+      console.error('Failed to send order confirmation email:', emailError)
+    }
+
+    res.status(201).json({
+      success: true,
+      data: order,
+      message: 'Order created successfully',
+      paymentIntent: paymentIntent
+        ? {
+            clientSecret: paymentIntent.client_secret,
+          }
+        : null,
+    })
+  } catch (error) {
+    await session.abortTransaction()
+    console.error('Order creation error:', error)
+
+    // Provide more specific error messages
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map((err) => err.message)
+      throw new ApiError(400, `Validation failed: ${errors.join(', ')}`)
+    }
+
+    throw error
+  } finally {
+    session.endSession()
+  }
 })
 
 // @desc    Get user orders
 // @route   GET /api/orders
 // @access  Private
 export const getUserOrders = asyncHandler(async (req, res) => {
-  const features = new ApiFeatures(Order.find({ user: req.user.id }), req.query)
-    .filter()
-    .sort()
-    .paginate()
+  const { page = 1, limit = 10, status, sort = '-createdAt' } = req.query
 
-  const orders = await features.query
-    .populate('items.product', 'title images')
-    .sort({ createdAt: -1 })
+  const query = { user: req.user.id }
+  if (status) query.status = status
 
-  const total = await Order.countDocuments({ user: req.user.id })
+  const features = new ApiFeatures(Order.find(query), req.query).filter().sort(sort).paginate()
+
+  const orders = await features.query.populate('items.product', 'title images slug').lean()
+
+  const total = await Order.countDocuments(query)
 
   res.json({
     success: true,
     data: orders,
     pagination: {
-      page: features.page,
-      limit: features.limit,
+      page: parseInt(page),
+      limit: parseInt(limit),
       total,
-      pages: Math.ceil(total / features.limit),
+      pages: Math.ceil(total / limit),
     },
   })
 })
@@ -226,14 +261,15 @@ export const getUserOrders = asyncHandler(async (req, res) => {
 // @access  Private
 export const getOrder = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id)
-    .populate('user', 'name email')
-    .populate('items.product', 'title images slug')
+    .populate('user', 'name email phone')
+    .populate('items.product', 'title images slug description')
+    .populate('statusHistory.updatedBy', 'name')
 
   if (!order) {
     throw new ApiError(404, 'Order not found')
   }
 
-  // Check if user owns the order or is admin
+  // Check authorization
   if (order.user._id.toString() !== req.user.id && req.user.role !== 'admin') {
     throw new ApiError(403, 'Not authorized to access this order')
   }
@@ -248,23 +284,35 @@ export const getOrder = asyncHandler(async (req, res) => {
 // @route   GET /api/orders/admin/all
 // @access  Private/Admin
 export const getAllOrders = asyncHandler(async (req, res) => {
-  const features = new ApiFeatures(Order.find(), req.query).filter().sort().paginate()
+  const { page = 1, limit = 20, status, search, sort = '-createdAt' } = req.query
+
+  const query = {}
+  if (status) query.status = status
+  if (search) {
+    query.$or = [
+      { orderNumber: { $regex: search, $options: 'i' } },
+      { 'shipping.address.name': { $regex: search, $options: 'i' } },
+      { 'shipping.address.email': { $regex: search, $options: 'i' } },
+    ]
+  }
+
+  const features = new ApiFeatures(Order.find(query), req.query).filter().sort(sort).paginate()
 
   const orders = await features.query
     .populate('user', 'name email')
     .populate('items.product', 'title images')
-    .sort({ createdAt: -1 })
+    .lean()
 
-  const total = await Order.countDocuments(features.filterQuery)
+  const total = await Order.countDocuments(query)
 
   res.json({
     success: true,
     data: orders,
     pagination: {
-      page: features.page,
-      limit: features.limit,
+      page: parseInt(page),
+      limit: parseInt(limit),
       total,
-      pages: Math.ceil(total / features.limit),
+      pages: Math.ceil(total / limit),
     },
   })
 })
@@ -273,23 +321,21 @@ export const getAllOrders = asyncHandler(async (req, res) => {
 // @route   PUT /api/orders/:id/status
 // @access  Private/Admin
 export const updateOrderStatus = asyncHandler(async (req, res) => {
-  const { status, notes } = req.body
+  const { status, note } = req.body
 
   const order = await Order.findById(req.params.id)
   if (!order) {
     throw new ApiError(404, 'Order not found')
   }
 
-  await order.updateStatus(status, notes)
+  await order.updateStatus(status, note, req.user.id)
 
   // Send status update email
-  if (order.contactInfo.email) {
-    await emailService.sendOrderStatusUpdate(
-      order.contactInfo.email,
-      order.user.name,
-      order,
-      status
-    )
+  if (order.user) {
+    const user = await User.findById(order.user)
+    if (user) {
+      await emailService.sendOrderStatusUpdate(user.email, user.name, order, status)
+    }
   }
 
   res.json({
@@ -310,37 +356,28 @@ export const cancelOrder = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Order not found')
   }
 
-  // Check if user owns the order
-  if (order.user.toString() !== req.user.id) {
+  // Check authorization
+  if (order.user.toString() !== req.user.id && req.user.role !== 'admin') {
     throw new ApiError(403, 'Not authorized to cancel this order')
   }
 
-  // Check if order can be cancelled
-  if (!['pending', 'confirmed'].includes(order.status)) {
+  if (!order.canBeCancelled) {
     throw new ApiError(400, 'Order cannot be cancelled at this stage')
   }
 
-  order.status = 'cancelled'
-  order.cancellationReason = reason
-  await order.save()
+  await order.updateStatus('cancelled', reason, req.user.id)
 
-  // Restore product inventory
-  for (const item of order.items) {
-    const product = await Product.findById(item.product)
-
-    if (item.variant.size && item.variant.color) {
-      const variant = product.variants.find(
-        (v) => v.size === item.variant.size && v.color === item.variant.color
-      )
-      if (variant) {
-        variant.stock += item.quantity
+  // Process refund if payment was completed
+  if (order.isPaid) {
+    try {
+      const payment = await Payment.findOne({ order: order._id })
+      if (payment) {
+        await payment.processRefund(order.pricing.total, 'order_cancelled')
       }
-    } else {
-      product.inventory.quantity += item.quantity
+    } catch (refundError) {
+      console.error('Refund processing failed:', refundError)
+      // Continue with cancellation even if refund fails
     }
-
-    product.salesCount -= item.quantity
-    await product.save()
   }
 
   res.json({
@@ -350,64 +387,479 @@ export const cancelOrder = asyncHandler(async (req, res) => {
   })
 })
 
+// @desc    Process order refund
+// @route   POST /api/orders/:id/refund
+// @access  Private/Admin
+export const processRefund = asyncHandler(async (req, res) => {
+  const { amount, reason, notes } = req.body
+
+  const order = await Order.findById(req.params.id)
+  if (!order) {
+    throw new ApiError(404, 'Order not found')
+  }
+
+  if (!order.canBeRefunded) {
+    throw new ApiError(400, 'Order cannot be refunded in its current state')
+  }
+
+  const refundAmount = amount || order.pricing.total
+  const refund = await order.processRefund(refundAmount, reason)
+
+  // Update payment record
+  const payment = await Payment.findOne({ order: order._id })
+  if (payment) {
+    await payment.processRefund(refundAmount, reason, notes)
+  }
+
+  // Send refund confirmation email
+  if (order.user) {
+    const user = await User.findById(order.user)
+    if (user) {
+      await emailService.sendRefundConfirmation(user.email, user.name, order, refund)
+    }
+  }
+
+  res.json({
+    success: true,
+    data: refund,
+    message: 'Refund processed successfully',
+  })
+})
+
 // @desc    Get order statistics
 // @route   GET /api/orders/stats
 // @access  Private/Admin
 export const getOrderStats = asyncHandler(async (req, res) => {
-  const { period = '30days' } = req.query
+  const { period = '30days', startDate, endDate } = req.query
 
-  let startDate = new Date()
-  switch (period) {
-    case '7days':
-      startDate.setDate(startDate.getDate() - 7)
-      break
-    case '30days':
-      startDate.setDate(startDate.getDate() - 30)
-      break
-    case '90days':
-      startDate.setDate(startDate.getDate() - 90)
-      break
-    default:
-      startDate.setDate(startDate.getDate() - 30)
+  let dateRange = {}
+  if (startDate && endDate) {
+    dateRange = {
+      startDate: new Date(startDate),
+      endDate: new Date(endDate),
+    }
+  } else {
+    const now = new Date()
+    switch (period) {
+      case '7days':
+        dateRange.startDate = new Date(now.setDate(now.getDate() - 7))
+        break
+      case '30days':
+        dateRange.startDate = new Date(now.setDate(now.getDate() - 30))
+        break
+      case '90days':
+        dateRange.startDate = new Date(now.setDate(now.getDate() - 90))
+        break
+      default:
+        dateRange.startDate = new Date(now.setDate(now.getDate() - 30))
+    }
+    dateRange.endDate = new Date()
   }
 
-  const stats = await Order.aggregate([
-    {
-      $match: {
-        createdAt: { $gte: startDate },
-        status: { $in: ['delivered', 'shipped', 'processing'] },
-      },
-    },
-    {
-      $group: {
-        _id: null,
-        totalOrders: { $sum: 1 },
-        totalRevenue: { $sum: '$pricing.totalPrice' },
-        averageOrderValue: { $avg: '$pricing.totalPrice' },
-      },
-    },
-  ])
-
-  // Get orders by status
-  const statusStats = await Order.aggregate([
-    {
-      $match: {
-        createdAt: { $gte: startDate },
-      },
-    },
-    {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 },
-      },
-    },
+  const [salesStats, statusStats, revenueTrend] = await Promise.all([
+    Order.getSalesStats(dateRange.startDate, dateRange.endDate),
+    Order.getOrdersByStatus(),
+    getRevenueTrend(dateRange.startDate, dateRange.endDate),
   ])
 
   res.json({
     success: true,
     data: {
-      overview: stats[0] || { totalOrders: 0, totalRevenue: 0, averageOrderValue: 0 },
+      overview: salesStats,
       byStatus: statusStats,
+      revenueTrend,
+      dateRange,
     },
   })
 })
+
+// @desc    Get order invoice
+// @route   GET /api/orders/:id/invoice
+// @access  Private
+export const getOrderInvoice = asyncHandler(async (req, res) => {
+  const order = await Order.findById(req.params.id)
+    .populate('user', 'name email phone')
+    .populate('items.product', 'title sku')
+
+  if (!order) {
+    throw new ApiError(404, 'Order not found')
+  }
+
+  // Check authorization
+  if (order.user._id.toString() !== req.user.id && req.user.role !== 'admin') {
+    throw new ApiError(403, 'Not authorized to access this order invoice')
+  }
+
+  // Create PDF invoice
+  const doc = new PDFDocument({ margin: 50 })
+
+  // Set response headers
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename=invoice-${order.orderNumber}.pdf`)
+
+  // Pipe PDF to response
+  doc.pipe(res)
+
+  // Add invoice content
+  addInvoiceContent(doc, order)
+
+  // Finalize PDF
+  doc.end()
+})
+
+// @desc    Track order
+// @route   GET /api/orders/:id/track
+// @access  Private
+export const trackOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findById(req.params.id)
+    .populate('user', 'name email')
+    .select('orderNumber status shipping statusHistory createdAt')
+
+  if (!order) {
+    throw new ApiError(404, 'Order not found')
+  }
+
+  // Check authorization
+  if (order.user._id.toString() !== req.user.id && req.user.role !== 'admin') {
+    throw new ApiError(403, 'Not authorized to track this order')
+  }
+
+  const trackingInfo = {
+    orderNumber: order.orderNumber,
+    status: order.status,
+    shipping: order.shipping,
+    statusHistory: order.statusHistory,
+    estimatedDelivery: order.shipping.estimatedDelivery,
+    createdAt: order.createdAt,
+  }
+
+  res.json({
+    success: true,
+    data: trackingInfo,
+  })
+})
+
+// @desc    Request return
+// @route   POST /api/orders/:id/return
+// @access  Private
+export const requestReturn = asyncHandler(async (req, res) => {
+  const { items, reason, notes } = req.body
+
+  const order = await Order.findById(req.params.id)
+  if (!order) {
+    throw new ApiError(404, 'Order not found')
+  }
+
+  // Check authorization
+  if (order.user.toString() !== req.user.id) {
+    throw new ApiError(403, 'Not authorized to request return for this order')
+  }
+
+  // Check if order can be returned
+  if (!order.isDelivered) {
+    throw new ApiError(400, 'Order must be delivered to request a return')
+  }
+
+  const deliveryDate = order.shipping.deliveredAt || order.updatedAt
+  const returnPeriod = 30 // days
+  const returnDeadline = new Date(deliveryDate.getTime() + returnPeriod * 24 * 60 * 60 * 1000)
+
+  if (new Date() > returnDeadline) {
+    throw new ApiError(400, 'Return period has expired')
+  }
+
+  // Validate return items
+  const returnItems = items.map((item) => {
+    const orderItem = order.items.id(item.itemId)
+    if (!orderItem) {
+      throw new ApiError(400, `Item ${item.itemId} not found in order`)
+    }
+    if (item.quantity > orderItem.quantity) {
+      throw new ApiError(400, `Return quantity exceeds ordered quantity for ${orderItem.name}`)
+    }
+    return {
+      itemId: item.itemId,
+      product: orderItem.product,
+      name: orderItem.name,
+      quantity: item.quantity,
+      price: orderItem.price,
+      reason: item.reason,
+    }
+  })
+
+  // Create return request
+  const returnRequest = {
+    requestId: `RET-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    items: returnItems,
+    reason,
+    notes,
+    status: 'pending',
+    requestedAt: new Date(),
+    totalAmount: returnItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
+  }
+
+  // Add return request to order
+  if (!order.returnRequests) {
+    order.returnRequests = []
+  }
+  order.returnRequests.push(returnRequest)
+
+  await order.save()
+
+  // Send return request notification
+  try {
+    const user = await User.findById(order.user)
+    await emailService.sendReturnRequestConfirmation(user.email, user.name, order, returnRequest)
+  } catch (emailError) {
+    console.error('Failed to send return confirmation email:', emailError)
+  }
+
+  res.json({
+    success: true,
+    data: returnRequest,
+    message: 'Return request submitted successfully',
+  })
+})
+
+// @desc    Update shipping info
+// @route   PUT /api/orders/:id/shipping
+// @access  Private/Admin
+export const updateShippingInfo = asyncHandler(async (req, res) => {
+  const { trackingNumber, carrier, estimatedDelivery, notes } = req.body
+
+  const order = await Order.findById(req.params.id)
+  if (!order) {
+    throw new ApiError(404, 'Order not found')
+  }
+
+  // Update shipping info
+  if (trackingNumber) order.shipping.trackingNumber = trackingNumber
+  if (carrier) order.shipping.carrier = carrier
+  if (estimatedDelivery) order.shipping.estimatedDelivery = new Date(estimatedDelivery)
+
+  // Generate tracking URL if not provided
+  if (trackingNumber && carrier && !order.shipping.trackingUrl) {
+    order.shipping.trackingUrl = generateTrackingUrl(carrier, trackingNumber)
+  }
+
+  await order.save()
+
+  // Send shipping update email
+  if (order.user && trackingNumber) {
+    const user = await User.findById(order.user)
+    if (user) {
+      await emailService.sendShippingUpdate(user.email, user.name, order)
+    }
+  }
+
+  res.json({
+    success: true,
+    data: order,
+    message: 'Shipping information updated successfully',
+  })
+})
+
+// Helper functions
+async function calculateOrderPricing(items, shippingMethod, couponCode, userId) {
+  const subtotal = items.reduce((total, item) => total + item.price * item.quantity, 0)
+
+  // Calculate shipping
+  const shippingCost = calculateShippingCost(items, shippingMethod)
+
+  // Calculate tax (simplified - in real app, use tax service)
+  const taxRate = 0.08 // 8%
+  const tax = subtotal * taxRate
+
+  // Apply coupon
+  let discount = 0
+  if (couponCode) {
+    try {
+      const coupon = await Coupon.findValidCoupon(couponCode, userId, subtotal, items)
+      discount = coupon.calculateDiscount(subtotal)
+    } catch (error) {
+      console.warn('Coupon validation failed:', error.message)
+    }
+  }
+
+  const total = Math.max(0, subtotal + shippingCost + tax - discount)
+
+  return {
+    subtotal: Number(subtotal.toFixed(2)),
+    shipping: Number(shippingCost.toFixed(2)),
+    tax: Number(tax.toFixed(2)),
+    discount: Number(discount.toFixed(2)),
+    total: Number(total.toFixed(2)),
+    currency: 'USD',
+  }
+}
+
+function calculateShippingCost(items, method) {
+  const totalWeight = items.reduce((total, item) => {
+    const itemWeight = item.product?.weight || 0.5 // Default 0.5kg
+    return total + itemWeight * item.quantity
+  }, 0)
+
+  const baseRates = {
+    standard: 5 + totalWeight * 0.5,
+    express: 15 + totalWeight * 1,
+    overnight: 25 + totalWeight * 2,
+    free: 0,
+  }
+
+  return Math.max(0, baseRates[method] || baseRates.standard)
+}
+
+async function calculateFraudScore(user, shippingAddress, orderAmount) {
+  // Simple fraud scoring - in real app, integrate with fraud detection service
+  let score = 50 // Neutral score
+
+  // Check order amount
+  if (orderAmount > 1000) score -= 10
+  if (orderAmount > 5000) score -= 20
+
+  // Check shipping address match
+  if (user.defaultAddress) {
+    const addressMatch =
+      user.defaultAddress.street === shippingAddress.street &&
+      user.defaultAddress.city === shippingAddress.city
+    if (!addressMatch) score -= 15
+  }
+
+  // Check user order history
+  const recentOrders = await Order.countDocuments({
+    user: user._id,
+    createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+  })
+  if (recentOrders > 5) score -= 10
+
+  return Math.max(0, Math.min(100, score))
+}
+
+async function getRevenueTrend(startDate, endDate) {
+  return Order.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: startDate, $lte: endDate },
+        status: { $in: ['delivered', 'shipped', 'processing'] },
+      },
+    },
+    {
+      $group: {
+        _id: {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' },
+          day: { $dayOfMonth: '$createdAt' },
+        },
+        revenue: { $sum: '$pricing.total' },
+        orders: { $sum: 1 },
+      },
+    },
+    {
+      $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 },
+    },
+  ])
+}
+
+function addInvoiceContent(doc, order) {
+  // Header
+  doc.fontSize(20).text('INVOICE', { align: 'center' })
+  doc.moveDown()
+
+  // Company Info
+  doc.fontSize(12)
+  doc.text('Your Company Name', 50, 100)
+  doc.text('123 Business Street', 50, 115)
+  doc.text('City, State 12345', 50, 130)
+  doc.text('Email: info@company.com', 50, 145)
+  doc.text('Phone: (555) 123-4567', 50, 160)
+
+  // Invoice Details
+  const invoiceTop = 100
+  doc.text(`Invoice Number: ${order.orderNumber}`, 350, invoiceTop, { align: 'right' })
+  doc.text(`Date: ${order.createdAt.toLocaleDateString()}`, 350, invoiceTop + 15, {
+    align: 'right',
+  })
+  doc.text(`Status: ${order.status.toUpperCase()}`, 350, invoiceTop + 30, { align: 'right' })
+
+  // Customer Info
+  doc.moveDown(3)
+  doc.text('BILL TO:', 50, 220)
+  doc.text(order.shipping.address.name, 50, 235)
+  doc.text(order.shipping.address.street, 50, 250)
+  doc.text(
+    `${order.shipping.address.city}, ${order.shipping.address.state} ${order.shipping.address.zipCode}`,
+    50,
+    265
+  )
+  if (order.shipping.address.phone) {
+    doc.text(`Phone: ${order.shipping.address.phone}`, 50, 280)
+  }
+
+  // Line
+  doc.moveTo(50, 320).lineTo(550, 320).stroke()
+
+  // Table Header
+  doc.text('Description', 50, 340)
+  doc.text('Quantity', 350, 340)
+  doc.text('Price', 450, 340)
+  doc.text('Total', 500, 340)
+
+  doc.moveTo(50, 360).lineTo(550, 360).stroke()
+
+  // Items
+  let yPosition = 380
+  order.items.forEach((item) => {
+    doc.text(item.name, 50, yPosition)
+    doc.text(item.quantity.toString(), 350, yPosition)
+    doc.text(`$${item.price.toFixed(2)}`, 450, yPosition)
+    doc.text(`$${item.totalPrice.toFixed(2)}`, 500, yPosition)
+    yPosition += 20
+  })
+
+  // Totals
+  const totalsY = yPosition + 40
+  doc
+    .moveTo(50, totalsY - 20)
+    .lineTo(550, totalsY - 20)
+    .stroke()
+
+  doc.text('Subtotal:', 400, totalsY)
+  doc.text(`$${order.pricing.subtotal.toFixed(2)}`, 500, totalsY)
+
+  doc.text('Shipping:', 400, totalsY + 20)
+  doc.text(`$${order.pricing.shipping.toFixed(2)}`, 500, totalsY + 20)
+
+  doc.text('Tax:', 400, totalsY + 40)
+  doc.text(`$${order.pricing.tax.toFixed(2)}`, 500, totalsY + 40)
+
+  if (order.pricing.discount > 0) {
+    doc.text('Discount:', 400, totalsY + 60)
+    doc.text(`-$${order.pricing.discount.toFixed(2)}`, 500, totalsY + 60)
+  }
+
+  doc
+    .moveTo(400, totalsY + 80)
+    .lineTo(550, totalsY + 80)
+    .stroke()
+  doc.fontSize(14).text('TOTAL:', 400, totalsY + 100)
+  doc.text(`$${order.pricing.total.toFixed(2)}`, 500, totalsY + 100)
+
+  // Footer
+  doc.fontSize(10)
+  doc.text('Thank you for your business!', 50, totalsY + 150, { align: 'center' })
+  doc.text('Please contact us with any questions.', 50, totalsY + 165, { align: 'center' })
+}
+
+function generateTrackingUrl(carrier, trackingNumber) {
+  const carriers = {
+    ups: `https://www.ups.com/track?tracknum=${trackingNumber}`,
+    fedex: `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}`,
+    usps: `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`,
+    dhl: `https://www.dhl.com/en/express/tracking.html?AWB=${trackingNumber}`,
+  }
+
+  return (
+    carriers[carrier.toLowerCase()] ||
+    `https://www.google.com/search?q=${carrier}+tracking+${trackingNumber}`
+  )
+}

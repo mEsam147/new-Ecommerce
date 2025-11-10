@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -51,6 +52,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
   } = useCart();
 
   const { isAuthenticated, manualMergeCarts } = useAuth();
+const router = useRouter()
 
   const [isMounted, setIsMounted] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
@@ -157,12 +159,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
 
   const handleCheckout = () => {
     onClose();
-    window.location.href = '/checkout';
+    router.push("/checkout")
   };
 
   const handleViewCartPage = () => {
     onClose();
-    window.location.href = '/cart';
+    router.push("/cart")
+
   };
 
   // Enhanced helper function to handle unpopulated product data

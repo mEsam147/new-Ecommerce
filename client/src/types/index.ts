@@ -1,4 +1,33 @@
+export type ShippingMethod = 'standard' | 'express' | 'overnight';
 
+export interface CartItem {
+  id: string;
+  productId: string;
+  product: {
+    _id: string;
+    title: string;
+    images: Array<{ url: string }>;
+    price: number;
+    slug: string;
+  };
+  quantity: number;
+  price: number;
+  size?: string;
+  color?: string;
+}
+
+export interface GuestShippingInfo {
+  email: string;
+  firstName: string;
+  lastName: string;
+  address: string;
+  apartment: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+  phone: string;
+}
 // types/index.ts
 export interface Product {
   _id: string;

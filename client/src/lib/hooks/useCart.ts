@@ -1577,7 +1577,7 @@ import {
 import { useToast } from './useToast';
 import { Product } from '@/types';
 import { cartApi } from '@/lib/services/cartApi';
-import { couponsApi } from '@/lib/services/couponsApi';
+import { couponsApi, useGetAvailableCouponsQuery } from '@/lib/services/couponsApi';
 import { RootState, store } from '../store';
 
 interface AddToCartParams {
@@ -1660,22 +1660,15 @@ export const useCart = () => {
   }, [normalizedItems]);
 
   // Use couponsApi instead of direct fetch - FIXED
-  const {
+ const {
     data: availableCoupons = [],
     isLoading: loadingCoupons,
+    error: availableCouponsError,
     refetch: refetchAvailableCoupons
-  } = couponsApi.useGetAvailableCouponsQuery(
+  } = useGetAvailableCouponsQuery(
+    { cartAmount: cartSubtotal },
     {
-      cartAmount: cartSubtotal,
-      cartItems: normalizedItems.map(item => ({
-        productId: item.productId,
-        product: item.product,
-        quantity: item.quantity,
-        price: item.price
-      }))
-    },
-    {
-      skip: isEmpty || cartSubtotal <= 0, // Skip when no items or zero subtotal
+      skip: isEmpty || cartSubtotal <= 0,
       refetchOnMountOrArgChange: true,
     }
   );
@@ -1757,7 +1750,6 @@ export const useCart = () => {
     color
   }: AddToCartParams) => {
     try {
-      console.log('🛒 useCart.addToCart - Starting, product:', product._id, 'quantity:', quantity);
 
       // Check inventory
       if (product.inventory?.trackQuantity && product.inventory.quantity < quantity) {

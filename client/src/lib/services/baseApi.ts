@@ -1,5 +1,4 @@
 
-
 // lib/services/baseApi.ts
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type { RootState } from '@/lib/store';
@@ -29,7 +28,8 @@ export const baseApi = createApi({
     'Brand',
     'Analytics',
     'PaymentMethod',
-    'Search'
+    'Search',
+    'Payment'
   ],
   endpoints: () => ({}),
 });
