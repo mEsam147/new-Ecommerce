@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { useGetOrdersQuery } from '@/lib/services/ordersApi';
 import { Order } from '@/lib/services/ordersApi';
+import Image from 'next/image';
 
 export default function OrdersPage() {
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
@@ -304,7 +305,10 @@ export default function OrdersPage() {
                       <div key={item._id || item.product} className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
                           {item.image ? (
-                            <img
+                            <Image
+                            width={25}
+                            height={25}
+
                               src={item.image}
                               alt={item.name}
                               className="w-full h-full object-cover"
@@ -339,8 +343,8 @@ export default function OrdersPage() {
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         {getPaymentMethodIcon(order.paymentMethod)}
                         <span className="capitalize">
-                          {order.paymentMethod.replace('_', ' ')}
-                          {!order.isPaid && ' (Pending)'}
+                          {order?.paymentMethod?.replace('_', ' ')}
+                          {!order?.isPaid && ' (Pending)'}
                         </span>
                       </div>
                       {order.shipping.trackingNumber && (

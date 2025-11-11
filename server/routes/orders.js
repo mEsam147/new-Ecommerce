@@ -32,7 +32,7 @@ router.use(protect)
 // User routes
 router.post('/', createOrder)
 router.get('/my-orders', validatePagination, getUserOrders)
-router.get('/:id', validateOrderId, getOrder)
+router.get('/:id', getOrder)
 router.get('/:id/invoice', validateOrderId, getOrderInvoice)
 router.get('/:id/track', validateOrderId, trackOrder)
 router.put('/:id/cancel', validateOrderId, validateCancelOrder, cancelOrder)

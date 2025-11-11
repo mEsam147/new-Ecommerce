@@ -331,7 +331,7 @@ export const ShippingStep: React.FC<ShippingStepProps> = ({
             <Button
               type="submit"
               disabled={isAuthenticated && !selectedAddress}
-              className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 text-lg font-semibold"
+              className="w-full gap-2  text-white py-7 text-lg font-semibold"
             >
               Continue to Payment
               <ArrowLeft className="w-5 h-5 rotate-180" />

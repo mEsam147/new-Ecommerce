@@ -15,6 +15,7 @@ interface StripePaymentFormProps {
   onSuccess: (paymentData: any) => void;
   onError: (error: any) => void;
   isProcessing: boolean;
+  agreeToTerms:boolean;
 }
 
 export const StripePaymentForm: React.FC<StripePaymentFormProps> = ({
@@ -22,6 +23,7 @@ export const StripePaymentForm: React.FC<StripePaymentFormProps> = ({
   onSuccess,
   onError,
   isProcessing,
+  agreeToTerms
 }) => {
   const stripe = useStripe();
   const elements = useElements();
@@ -242,7 +244,7 @@ export const StripePaymentForm: React.FC<StripePaymentFormProps> = ({
 
         <Button
           type="submit"
-          disabled={!stripe || !clientSecret || isSubmitting || isProcessing}
+          disabled={!stripe || !clientSecret || isSubmitting || isProcessing || !agreeToTerms}
           className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 text-lg font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed transition-all"
         >
           {isSubmitting ? (

@@ -320,15 +320,9 @@ const handleOrderCreation = async (paymentData?: any) => {
       billingAddress: undefined,
     };
 
-    console.log('📦 Final order data being sent:', JSON.stringify(orderData, null, 2));
-
-    // Create order with detailed error handling
-    console.log('🔄 Calling createOrder API...');
-
     // Log the actual network request
     const originalFetch = window.fetch;
     window.fetch = function(...args) {
-      console.log('🌐 Network Request:', args[0], args[1]);
       return originalFetch.apply(this, args);
     };
 

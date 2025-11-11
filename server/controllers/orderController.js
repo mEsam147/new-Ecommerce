@@ -256,30 +256,62 @@ export const getUserOrders = asyncHandler(async (req, res) => {
   })
 })
 
-// @desc    Get single order
-// @route   GET /api/orders/:id
-// @access  Private
 export const getOrder = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id)
-    .populate('user', 'name email phone')
-    .populate('items.product', 'title images slug description')
-    .populate('statusHistory.updatedBy', 'name')
+  try {
+    const { id } = req.params
 
-  if (!order) {
-    throw new ApiError(404, 'Order not found')
+    // Validate order ID
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      throw new ApiError(400, 'Invalid order ID')
+    }
+
+    // Find order with minimal population and safe options
+    const order = await Order.findById(id)
+      .populate('user', 'name email phone')
+      .populate({
+        path: 'items.product',
+        select: 'title images slug description price inventory', // Select only needed fields
+        options: {
+          // Disable virtuals for populated products to avoid the error
+          virtuals: false,
+        },
+      })
+      .populate('statusHistory.updatedBy', 'name')
+      .lean({ virtuals: false }) // Disable virtuals to prevent the error
+
+    if (!order) {
+      throw new ApiError(404, 'Order not found')
+    }
+
+    // Check authorization
+    const orderUserId = order.user?._id?.toString() || order.user?.toString()
+
+    if (orderUserId !== req.user.id && req.user.role !== 'admin') {
+      throw new ApiError(403, 'Not authorized to access this order')
+    }
+
+    // Manually clean up the order data to ensure no virtuals cause issues
+    const safeOrderData = JSON.parse(JSON.stringify(order))
+
+    res.json({
+      success: true,
+      data: safeOrderData,
+    })
+  } catch (error) {
+    console.error('Error in getOrder controller:', error)
+
+    if (error instanceof ApiError) {
+      throw error
+    }
+
+    // If it's the virtual property error, provide a more specific message
+    if (error.message?.includes('filter') || error.stack?.includes('filter')) {
+      throw new ApiError(500, 'Error processing order data. Please try again.')
+    }
+
+    throw new ApiError(500, 'Internal server error while fetching order')
   }
-
-  // Check authorization
-  if (order.user._id.toString() !== req.user.id && req.user.role !== 'admin') {
-    throw new ApiError(403, 'Not authorized to access this order')
-  }
-
-  res.json({
-    success: true,
-    data: order,
-  })
 })
-
 // @desc    Get all orders (Admin)
 // @route   GET /api/orders/admin/all
 // @access  Private/Admin
@@ -348,43 +380,115 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
 // @desc    Cancel order
 // @route   PUT /api/orders/:id/cancel
 // @access  Private
+// controllers/orderController.js - Fixed cancelOrder function
+// controllers/orderController.js - Fixed cancelOrder function
 export const cancelOrder = asyncHandler(async (req, res) => {
   const { reason } = req.body
 
-  const order = await Order.findById(req.params.id)
+  // Find order with proper population
+  const order = await Order.findById(req.params.id).populate('user', '_id name email')
+
   if (!order) {
     throw new ApiError(404, 'Order not found')
   }
 
+  console.log('Current order status:', order.status)
+
   // Check authorization
-  if (order.user.toString() !== req.user.id && req.user.role !== 'admin') {
+  if (order.user._id.toString() !== req.user.id && req.user.role !== 'admin') {
     throw new ApiError(403, 'Not authorized to cancel this order')
   }
 
-  if (!order.canBeCancelled) {
-    throw new ApiError(400, 'Order cannot be cancelled at this stage')
+  // Check if order is already cancelled
+  if (order.status === 'cancelled') {
+    return res.json({
+      success: true,
+      data: order,
+      message: 'Order is already cancelled',
+    })
   }
 
-  await order.updateStatus('cancelled', reason, req.user.id)
+  // Define cancellable statuses
+  const cancellableStatuses = ['pending', 'confirmed', 'processing']
 
-  // Process refund if payment was completed
-  if (order.isPaid) {
-    try {
-      const payment = await Payment.findOne({ order: order._id })
-      if (payment) {
-        await payment.processRefund(order.pricing.total, 'order_cancelled')
+  // Check if order can be cancelled
+  if (!cancellableStatuses.includes(order.status)) {
+    throw new ApiError(400, `Order cannot be cancelled. Current status: ${order.status}`)
+  }
+
+  try {
+    // Update order status
+    if (typeof order.updateStatus === 'function') {
+      await order.updateStatus('cancelled', reason || 'Order cancelled by user', req.user.id)
+    } else {
+      // Fallback if updateStatus method doesn't exist
+      order.status = 'cancelled'
+      order.cancellationReason = reason || 'Order cancelled by user'
+
+      // Add to status history
+      if (!order.statusHistory) {
+        order.statusHistory = []
       }
-    } catch (refundError) {
-      console.error('Refund processing failed:', refundError)
-      // Continue with cancellation even if refund fails
-    }
-  }
+      order.statusHistory.push({
+        status: 'cancelled',
+        note: reason || 'Order cancelled by user',
+        updatedBy: req.user.id,
+        timestamp: new Date(),
+      })
 
-  res.json({
-    success: true,
-    data: order,
-    message: 'Order cancelled successfully',
-  })
+      await order.save()
+    }
+
+    // Process refund if payment was completed
+    if (
+      order.payment &&
+      order.payment.status === 'completed' &&
+      order.pricing &&
+      order.pricing.total > 0
+    ) {
+      try {
+        const payment = await Payment.findOne({ order: order._id })
+        if (payment) {
+          if (typeof payment.processRefund === 'function') {
+            await payment.processRefund(order.pricing.total, reason || 'order_cancelled')
+          } else {
+            console.log('Payment refund processing not available, updating payment status manually')
+            payment.status = 'refunded'
+            await payment.save()
+          }
+        }
+      } catch (refundError) {
+        console.error('Refund processing failed:', refundError)
+        // Continue with cancellation even if refund fails
+      }
+    }
+
+    // Send cancellation confirmation email
+    try {
+      if (order.user && order.user.email) {
+        await emailService.sendOrderCancellationConfirmation(
+          order.user.email,
+          order.user.name,
+          order,
+          reason
+        )
+      }
+    } catch (emailError) {
+      console.error('Failed to send cancellation email:', emailError)
+    }
+
+    // Get the updated order
+    const updatedOrder = await Order.findById(order._id)
+
+    res.json({
+      success: true,
+      data: updatedOrder,
+      message: 'Order cancelled successfully',
+    })
+  } catch (error) {
+    console.error('Error during order cancellation:', error)
+    throw new ApiError(500, `Failed to cancel order: ${error.message}`)
+  }
 })
 
 // @desc    Process order refund

@@ -1,7 +1,7 @@
-// components/checkout/PaymentStep.tsx - UPDATED
+// components/checkout/PaymentStep.tsx - IMPROVED UX
 'use client';
 
-import React, { useState, useEffect } from 'react'; // Added useEffect
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -20,6 +20,8 @@ import {
   Globe,
   Shield,
   Banknote,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { useCreateCheckoutSessionMutation } from '@/lib/services/paymentApi';
 import { useToast } from '@/lib/hooks/useToast';
@@ -52,28 +54,32 @@ const paymentMethods = [
     name: 'Credit/Debit Card',
     icon: CreditCard,
     description: 'Pay with Visa, Mastercard, or American Express',
-    supported: true
+    supported: true,
+    features: ['Secure encryption', 'Instant processing', 'All major cards']
   },
   {
     id: 'paypal',
     name: 'PayPal',
     icon: Wallet,
     description: 'Pay with your PayPal account',
-    supported: true
+    supported: true,
+    features: ['Fast checkout', 'Buyer protection', 'No card needed']
   },
   {
     id: 'cash_on_delivery',
     name: 'Cash on Delivery',
     icon: Banknote,
     description: 'Pay when you receive your order',
-    supported: true
+    supported: true,
+    features: ['Pay upon delivery', 'No upfront payment', 'Available in select areas']
   },
   {
     id: 'apple_pay',
     name: 'Apple Pay',
     icon: Apple,
     description: 'Pay with Apple Pay',
-    supported: false
+    supported: false,
+    features: ['Coming soon']
   },
 ];
 
@@ -101,19 +107,29 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
   const { success, error: toastError } = useToast();
   const [stripePaymentData, setStripePaymentData] = useState<any>(null);
   const [showTermsError, setShowTermsError] = useState(false);
+  const [hasAttemptedPayment, setHasAttemptedPayment] = useState(false);
   const safeTotalAmount = totalAmount || 0;
 
   // Show terms error when payment is attempted without agreeing
   useEffect(() => {
-    if (isProcessing) {
-      setShowTermsError(!agreeToTerms);
+    if (isProcessing && !agreeToTerms) {
+      setShowTermsError(true);
+      setHasAttemptedPayment(true);
     }
   }, [isProcessing, agreeToTerms]);
+
+  // Reset terms error when user starts checking the box
+  useEffect(() => {
+    if (agreeToTerms && showTermsError) {
+      setShowTermsError(false);
+    }
+  }, [agreeToTerms]);
 
   // ✅ Stripe Checkout session redirect
   const handleStripeCheckout = async () => {
     if (!agreeToTerms) {
       setShowTermsError(true);
+      setHasAttemptedPayment(true);
       toastError('Please agree to the terms and conditions.');
       return;
     }
@@ -145,6 +161,7 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
 
       if (!agreeToTerms) {
         setShowTermsError(true);
+        setHasAttemptedPayment(true);
         toastError('Please agree to the terms and conditions before completing your order.');
         return;
       }
@@ -170,6 +187,7 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
 
       if (!agreeToTerms) {
         setShowTermsError(true);
+        setHasAttemptedPayment(true);
         toastError('Please agree to the terms and conditions before completing your order.');
         return;
       }
@@ -198,6 +216,7 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
 
       if (!agreeToTerms) {
         setShowTermsError(true);
+        setHasAttemptedPayment(true);
         toastError('Please agree to the terms and conditions before placing your order.');
         return;
       }
@@ -223,6 +242,48 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
     onAgreeToTermsChange(checked);
   };
 
+  // Helper function to check if payment button should be disabled
+  const isPaymentButtonDisabled = () => {
+    return !agreeToTerms || isProcessing || isCreatingSession;
+  };
+
+  // Get payment button text based on state
+  const getPaymentButtonText = () => {
+    if (isProcessing || isCreatingSession) {
+      return (
+        <>
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Processing...
+        </>
+      );
+    }
+
+    switch (paymentMethod) {
+      case 'cash_on_delivery':
+        return (
+          <>
+            <CheckCircle2 className="w-5 h-5" />
+            Place Order - ${safeTotalAmount.toFixed(2)}
+          </>
+        );
+      case 'stripe':
+      case 'paypal':
+        return (
+          <>
+            <Lock className="w-5 h-5" />
+            Pay ${safeTotalAmount.toFixed(2)} Securely
+          </>
+        );
+      default:
+        return (
+          <>
+            <Lock className="w-5 h-5" />
+            Continue to Payment
+          </>
+        );
+    }
+  };
+
   const renderPaymentForm = () => {
     switch (paymentMethod) {
       case 'stripe':
@@ -235,6 +296,8 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
             user={user}
             guestShippingInfo={guestShippingInfo}
             isAuthenticated={isAuthenticated}
+            agreeToTerms={agreeToTerms}
+            onTermsError={() => setShowTermsError(true)}
           />
         );
       case 'paypal':
@@ -244,6 +307,8 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
             onSuccess={handlePayPalPayment}
             onError={onError}
             isProcessing={isProcessing}
+            agreeToTerms={agreeToTerms}
+            onTermsError={() => setShowTermsError(true)}
           />
         );
       case 'cash_on_delivery':
@@ -256,60 +321,57 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
               </AlertDescription>
             </Alert>
 
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h4 className="font-semibold text-gray-900 mb-2">Cash on Delivery Instructions</h4>
-              <ul className="text-sm text-gray-600 space-y-1">
-                <li>• Have exact change ready for the delivery person</li>
-                <li>• Delivery time: 3-7 business days</li>
-                <li>• Additional $2.00 cash handling fee applies</li>
-                <li>• Photo ID required for verification</li>
+            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <Banknote className="w-4 h-4 text-green-600" />
+                Cash on Delivery Instructions
+              </h4>
+              <ul className="text-sm text-gray-600 space-y-2">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  Have exact change ready for the delivery person
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  Delivery time: 3-7 business days
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  Additional $2.00 cash handling fee applies
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  Photo ID required for verification
+                </li>
               </ul>
             </div>
 
             <Button
               onClick={handleCashOnDelivery}
-              disabled={!agreeToTerms || isProcessing}
-              className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 text-lg font-semibold"
+              disabled={isPaymentButtonDisabled()}
+              className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white py-3 text-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              size="lg"
             >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Placing Order...
-                </>
-              ) : (
-                <>
-                  <Lock className="w-5 h-5" />
-                  Place Order - ${safeTotalAmount.toFixed(2)}
-                </>
-              )}
+              {getPaymentButtonText()}
             </Button>
           </div>
         );
       default:
         return (
           <div className="space-y-4">
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Select a payment method to continue
+            <Alert className="bg-blue-50 border-blue-200">
+              <AlertCircle className="h-4 w-4 text-blue-600" />
+              <AlertDescription className="text-blue-800">
+                Select a payment method to continue with your secure checkout
               </AlertDescription>
             </Alert>
             <Button
               onClick={handleStripeCheckout}
-              disabled={!agreeToTerms || isCreatingSession || isProcessing}
-              className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 text-lg font-semibold"
+              disabled={isPaymentButtonDisabled()}
+              className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 text-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              size="lg"
             >
-              {isCreatingSession || isProcessing ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Lock className="w-5 h-5" />
-                  Continue to Payment
-                </>
-              )}
+              {getPaymentButtonText()}
             </Button>
           </div>
         );
@@ -319,45 +381,84 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
   return (
     <Card className="shadow-lg border-0">
       <CardHeader className="bg-gradient-to-r from-gray-50 to-white border-b">
-        <CardTitle className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-          <CreditCard className="w-5 h-5 text-blue-600" />
-          Payment Method
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-blue-600" />
+            Payment Method
+          </CardTitle>
+          <div className="text-sm text-gray-600 bg-blue-50 px-3 py-1 rounded-full">
+            Step 3 of 3
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="p-6">
         <div className="space-y-6">
+          {/* Order Summary */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Order Summary</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Items ({cart?.length || 0}):</span>
+                <span className="font-medium">${(safeTotalAmount - shippingCost).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Shipping:</span>
+                <span className="font-medium">${shippingCost.toFixed(2)}</span>
+              </div>
+              <div className="border-t pt-2 flex justify-between text-lg font-bold">
+                <span className="text-gray-900">Total:</span>
+                <span className="text-gray-900">${safeTotalAmount.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
           {/* Payment Method Selection */}
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Select Payment Method
+              Choose Payment Method
             </h3>
             <RadioGroup value={paymentMethod} onValueChange={onPaymentMethodChange} className="space-y-3">
               {paymentMethods.map((method) => (
                 <div
                   key={method.id}
-                  className={`flex items-center space-x-3 rounded-lg border p-4 transition-all ${
+                  className={`flex items-start space-x-3 rounded-lg border p-4 transition-all cursor-pointer ${
                     paymentMethod === method.id
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  } ${!method.supported ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      ? 'border-blue-500 bg-blue-50 shadow-sm'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  } ${!method.supported ? 'opacity-50 cursor-not-allowed' : ''}`}
                   onClick={() => method.supported && onPaymentMethodChange(method.id)}
                 >
                   <RadioGroupItem
                     value={method.id}
                     id={method.id}
                     disabled={!method.supported}
+                    className="mt-1"
                   />
                   <Label htmlFor={method.id} className="flex-1 cursor-pointer">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <method.icon className="w-5 h-5 text-gray-600" />
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start space-x-3">
+                        <div className={`p-2 rounded-lg ${
+                          paymentMethod === method.id ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          <method.icon className="w-4 h-4" />
+                        </div>
                         <div>
                           <p className="font-medium text-gray-900">{method.name}</p>
-                          <p className="text-sm text-gray-600">{method.description}</p>
+                          <p className="text-sm text-gray-600 mt-1">{method.description}</p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {method.features.map((feature, index) => (
+                              <span
+                                key={index}
+                                className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded"
+                              >
+                                {feature}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       </div>
                       {!method.supported && (
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded">
                           Coming Soon
                         </span>
                       )}
@@ -368,30 +469,27 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
             </RadioGroup>
           </div>
 
-          {/* Selected Payment Form */}
-          {paymentMethod && (
-            <div className="border-t pt-6">
-              {renderPaymentForm()}
-            </div>
-          )}
-
-          {/* Terms and Conditions */}
-          <div className="border-t pt-6">
+   <div className="border-t pt-6">
             <div className="flex items-start space-x-3">
               <Checkbox
                 id="terms"
                 checked={agreeToTerms}
                 onCheckedChange={handleTermsChange}
-                className="mt-1"
+                className={`mt-1 ${showTermsError ? 'border-red-500' : ''}`}
               />
               <div className="space-y-2 flex-1">
-                <Label htmlFor="terms" className="text-sm text-gray-700 cursor-pointer">
+                <Label
+                  htmlFor="terms"
+                  className={`text-sm cursor-pointer transition-colors ${
+                    showTermsError ? 'text-red-700' : 'text-gray-700'
+                  }`}
+                >
                   I agree to the{' '}
-                  <Link href="/terms" className="text-blue-600 hover:text-blue-700 underline">
+                  <Link href="/terms" className="text-blue-600 hover:text-blue-700 underline font-medium">
                     Terms and Conditions
                   </Link>{' '}
                   and{' '}
-                  <Link href="/privacy" className="text-blue-600 hover:text-blue-700 underline">
+                  <Link href="/privacy" className="text-blue-600 hover:text-blue-700 underline font-medium">
                     Privacy Policy
                   </Link>
                   . I understand that my order is subject to verification and approval.
@@ -399,8 +497,8 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
 
                 {/* Terms Error Message */}
                 {showTermsError && (
-                  <Alert variant="destructive" className="mt-2">
-                    <AlertCircle className="h-4 w-4" />
+                  <Alert variant="destructive" className="mt-2 animate-pulse">
+                    <XCircle className="h-4 w-4" />
                     <AlertDescription>
                       You must agree to the terms and conditions to complete your order.
                     </AlertDescription>
@@ -409,10 +507,36 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
               </div>
             </div>
           </div>
+          {/* Selected Payment Form */}
+          {paymentMethod && (
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Complete Your Payment
+              </h3>
+              {renderPaymentForm()}
+            </div>
+          )}
+
+          {/* Terms and Conditions */}
+
+
+          {/* Navigation Buttons */}
+          <div className="flex gap-4 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onBack}
+              disabled={isProcessing}
+              className="flex-1 gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Shipping
+            </Button>
+          </div>
 
           {/* Security Footer */}
           <div className="bg-gray-50 rounded-lg p-4 border">
-            <div className="flex items-center justify-between text-sm text-gray-600">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-600">
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-2">
                   <Shield className="w-4 h-4 text-green-600" />
@@ -425,7 +549,7 @@ export const PaymentStep: React.FC<PaymentStepProps> = (props) => {
               </div>
               <div className="flex items-center space-x-2">
                 <Globe className="w-4 h-4 text-gray-500" />
-                <span>Your data is safe with us</span>
+                <span>Your payment data is encrypted and secure</span>
               </div>
             </div>
           </div>
