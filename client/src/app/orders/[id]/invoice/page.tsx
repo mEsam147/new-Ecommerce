@@ -17,15 +17,16 @@ import {
   Phone,
   Globe,
   Package,
-  AlertCircle
+  AlertCircle,
+  Truck,
+  MapPin
 } from 'lucide-react';
 import { useGetOrderQuery } from '@/lib/services/ordersApi';
-import { Order } from '@/lib/services/ordersApi';
 
-// Extended interface to match your actual API response
+// Interface matching your actual backend Order model
 interface OrderItem {
   _id: string;
-  product: {
+  product: string | {
     _id: string;
     title: string;
     slug: string;
@@ -39,26 +40,95 @@ interface OrderItem {
   variant?: {
     size?: string;
     color?: string;
+    sku?: string;
   };
   name: string;
   image: string;
   price: number;
   quantity: number;
   totalPrice: number;
+  weight?: number;
+  sku?: string;
 }
 
-interface ExtendedOrder extends Omit<Order, 'items'> {
+interface OrderPricing {
+  subtotal: number;
+  shipping: number;
+  tax: number;
+  discount: number;
+  total: number;
+  currency: string;
+}
+
+interface OrderShipping {
+  method: string;
+  carrier?: string;
+  trackingNumber?: string;
+  trackingUrl?: string;
+  estimatedDelivery?: string;
+  shippedAt?: string;
+  deliveredAt?: string;
+  cost: number;
+  address?: {
+    name: string;
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+    phone?: string;
+  };
+}
+
+interface OrderPayment {
+  method: string;
+  status: string;
+  amount: number;
+  currency: string;
+  transactionId?: string;
+  paymentIntentId?: string;
+}
+
+interface InvoiceOrder {
+  _id: string;
+  orderNumber: string;
+  user: {
+    _id: string;
+    name: string;
+    email: string;
+    phone?: string;
+  } | string;
   items: OrderItem[];
+  status: string;
+  statusHistory: Array<{
+    status: string;
+    timestamp: string;
+    note?: string;
+    updatedBy?: string;
+  }>;
+  pricing: OrderPricing;
+  payment: OrderPayment;
+  shipping: OrderShipping;
+  billingAddress?: {
+    name: string;
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+    phone?: string;
+  };
+  customerNotes?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export default function InvoicePage() {
   const params = useParams();
   const orderId = params.id as string;
 
-  // Use the ordersApi hook
   const { data: orderResponse, isLoading, error } = useGetOrderQuery(orderId);
-
-  const order = orderResponse?.data as ExtendedOrder;
+  const order = orderResponse?.data as InvoiceOrder;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -80,31 +150,60 @@ export default function InvoicePage() {
   };
 
   const handleDownloadPDF = () => {
-    // In a real app, this would generate and download a PDF
-    // For now, we'll trigger the browser's print dialog which can save as PDF
     window.print();
   };
 
-  const getPaymentStatusBadge = (isPaid: boolean) => {
-    return (
-      <Badge className={isPaid ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}>
-        {isPaid ? 'Paid' : 'Pending'}
-      </Badge>
-    );
-  };
-
-  // Safe product ID extraction
-  const getProductId = (item: OrderItem) => {
-    return typeof item.product === 'string' ? item.product : item.product?._id || 'N/A';
-  };
-
-  // Safe product title extraction
+  // Safe data extraction helpers
   const getProductTitle = (item: OrderItem) => {
-    if (typeof item.product === 'string') {
-      return item.name || 'Product';
-    }
-    return item.product?.title || item.name || 'Product';
+    return item.name || 'Product';
   };
+
+  const getProductId = (item: OrderItem) => {
+    if (typeof item.product === 'string') {
+      return item.product;
+    }
+    return item.product?._id || item.sku || 'N/A';
+  };
+
+  const getUserEmail = () => {
+    if (!order?.user) return 'N/A';
+    if (typeof order.user === 'object') {
+      return order.user.email;
+    }
+    return 'N/A';
+  };
+
+  const getUserName = () => {
+    if (!order?.user) return 'Customer';
+    if (typeof order.user === 'object') {
+      return order.user.name;
+    }
+    return 'Customer';
+  };
+
+  const getShippingAddress = () => {
+    if (order?.shipping?.address) {
+      return order.shipping.address;
+    }
+    return {
+      name: getUserName(),
+      street: '',
+      city: '',
+      state: '',
+      zipCode: '',
+      country: '',
+      phone: ''
+    };
+  };
+
+  const getBillingAddress = () => {
+    if (order?.billingAddress) {
+      return order.billingAddress;
+    }
+    return getShippingAddress();
+  };
+
+  const isPaid = order?.payment?.status === 'completed';
 
   if (isLoading) {
     return (
@@ -151,6 +250,10 @@ export default function InvoicePage() {
     );
   }
 
+  const shippingAddress = getShippingAddress();
+  const billingAddress = getBillingAddress();
+  const userEmail = getUserEmail();
+
   return (
     <div className="min-h-screen bg-white py-8 print:py-0">
       <div className="max-w-4xl mx-auto px-4 print:max-w-none print:px-0">
@@ -184,7 +287,9 @@ export default function InvoicePage() {
                 <p className="text-gray-600 mt-2">Order #{order.orderNumber}</p>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-sm text-gray-600">Status:</span>
-                  {getPaymentStatusBadge(order.isPaid)}
+                  <Badge className={isPaid ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}>
+                    {isPaid ? 'Paid' : 'Pending'}
+                  </Badge>
                 </div>
               </div>
               <div className="text-right">
@@ -224,16 +329,19 @@ export default function InvoicePage() {
                 </div>
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Bill To:</h3>
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <MapPin className="w-4 h-4" />
+                  Bill To:
+                </h3>
                 <div className="text-gray-600 space-y-1">
-                  <p className="font-semibold">{order.billingAddress?.name || order.shippingAddress.name}</p>
-                  <p>{order.billingAddress?.street || order.shippingAddress.street}</p>
+                  <p className="font-semibold">{billingAddress.name}</p>
+                  <p>{billingAddress.street}</p>
                   <p>
-                    {order.billingAddress?.city || order.shippingAddress.city}, {order.billingAddress?.state || order.shippingAddress.state} {order.billingAddress?.zipCode || order.shippingAddress.zipCode}
+                    {billingAddress.city}, {billingAddress.state} {billingAddress.zipCode}
                   </p>
-                  <p>{order.billingAddress?.country || order.shippingAddress.country}</p>
-                  <p>{order.contactInfo.email}</p>
-                  <p>{order.contactInfo.phone || order.shippingAddress.phone}</p>
+                  <p>{billingAddress.country}</p>
+                  {billingAddress.phone && <p>{billingAddress.phone}</p>}
+                  <p>{userEmail}</p>
                 </div>
               </div>
             </div>
@@ -254,7 +362,7 @@ export default function InvoicePage() {
               </div>
               <div>
                 <p className="text-sm text-gray-600">Order Status</p>
-                <p className="font-semibold capitalize">{order.status}</p>
+                <p className="font-semibold capitalize">{order.status.replace('_', ' ')}</p>
               </div>
             </div>
 
@@ -265,16 +373,16 @@ export default function InvoicePage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="text-left p-4 font-semibold text-gray-900">Item</th>
+                      <th className="text-left p-4 font-semibold text-gray-900">Product</th>
                       <th className="text-left p-4 font-semibold text-gray-900">Details</th>
-                      <th className="text-right p-4 font-semibold text-gray-900">Quantity</th>
+                      <th className="text-right p-4 font-semibold text-gray-900">Qty</th>
                       <th className="text-right p-4 font-semibold text-gray-900">Unit Price</th>
                       <th className="text-right p-4 font-semibold text-gray-900">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
                     {order.items.map((item, index) => (
-                      <tr key={item._id || getProductId(item)} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <tr key={item._id || index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="p-4">
                           <div>
                             <p className="font-medium text-gray-900">{getProductTitle(item)}</p>
@@ -308,91 +416,97 @@ export default function InvoicePage() {
             <div className="flex justify-end">
               <div className="w-80 space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Items Subtotal:</span>
-                  <span className="font-medium">{formatCurrency(order.pricing.itemsPrice)}</span>
+                  <span className="text-gray-600">Subtotal:</span>
+                  <span className="font-medium">{formatCurrency(order.pricing.subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Shipping:</span>
-                  <span className="font-medium">{formatCurrency(order.pricing.shippingPrice)}</span>
+                  <span className="font-medium">{formatCurrency(order.pricing.shipping)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Tax:</span>
-                  <span className="font-medium">{formatCurrency(order.pricing.taxPrice)}</span>
+                  <span className="font-medium">{formatCurrency(order.pricing.tax)}</span>
                 </div>
-                {order.pricing.discountAmount > 0 && (
+                {order.pricing.discount > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount:</span>
-                    <span>-{formatCurrency(order.pricing.discountAmount)}</span>
-                  </div>
-                )}
-                {order.coupon && (
-                  <div className="flex justify-between text-sm text-gray-600">
-                    <span>Coupon Applied: {order.coupon.code}</span>
-                    <span>-{formatCurrency(order.coupon.discountAmount || 0)}</span>
+                    <span>-{formatCurrency(order.pricing.discount)}</span>
                   </div>
                 )}
                 <Separator />
                 <div className="flex justify-between text-lg font-bold">
-                  <span className="text-gray-900">Total Amount:</span>
-                  <span className="text-gray-900">{formatCurrency(order.pricing.totalPrice)}</span>
+                  <span className="text-gray-900">Total:</span>
+                  <span className="text-gray-900">{formatCurrency(order.pricing.total)}</span>
                 </div>
               </div>
             </div>
 
             {/* Payment Status */}
             <div className={`mt-8 p-4 rounded-lg border ${
-              order.isPaid
+              isPaid
                 ? 'bg-green-50 border-green-200'
                 : 'bg-yellow-50 border-yellow-200'
             }`}>
               <div className="flex items-center justify-between">
                 <div>
                   <p className={`font-semibold ${
-                    order.isPaid ? 'text-green-800' : 'text-yellow-800'
+                    isPaid ? 'text-green-800' : 'text-yellow-800'
                   }`}>
-                    Payment Status: {order.isPaid ? 'Paid' : 'Pending'}
+                    Payment Status: {order.payment?.status || 'pending'}
                   </p>
                   <p className={`text-sm ${
-                    order.isPaid ? 'text-green-700' : 'text-yellow-700'
+                    isPaid ? 'text-green-700' : 'text-yellow-700'
                   }`}>
-                    {order.isPaid
-                      ? `Thank you for your business. ${order.paidAt ? `Payment was completed on ${formatDate(order.paidAt)}.` : 'Payment has been processed successfully.'}`
+                    {isPaid
+                      ? `Thank you for your business. Payment was completed successfully.`
                       : 'Your payment is pending. Please complete the payment to process your order.'
                     }
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-gray-600">Payment Method</p>
-                  <p className="font-semibold capitalize">{order.paymentMethod.replace('_', ' ')}</p>
+                  <p className="font-semibold capitalize">{order.payment?.method?.replace('_', ' ') || 'Not specified'}</p>
                 </div>
               </div>
             </div>
 
-            {/* Order Notes */}
-            {order.notes && (
+            {/* Customer Notes */}
+            {order.customerNotes && (
               <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <h4 className="font-semibold text-blue-900 mb-2">Order Notes</h4>
-                <p className="text-blue-700 text-sm">{order.notes}</p>
+                <h4 className="font-semibold text-blue-900 mb-2">Customer Notes</h4>
+                <p className="text-blue-700 text-sm">{order.customerNotes}</p>
               </div>
             )}
 
             {/* Shipping Information */}
             <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h4 className="font-semibold text-gray-900 mb-2">Shipping Information</h4>
+              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <Truck className="w-4 h-4" />
+                Shipping Information
+              </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
                 <div>
-                  <p><strong>Method:</strong> {order.shipping.method}</p>
-                  {order.shipping.carrier && <p><strong>Carrier:</strong> {order.shipping.carrier}</p>}
-                  {order.shipping.trackingNumber && (
+                  <p><strong>Method:</strong> {order.shipping?.method || 'Standard'}</p>
+                  {order.shipping?.carrier && <p><strong>Carrier:</strong> {order.shipping.carrier}</p>}
+                  {order.shipping?.trackingNumber && (
                     <p><strong>Tracking #:</strong> {order.shipping.trackingNumber}</p>
                   )}
                 </div>
                 <div>
-                  {order.shipping.estimatedDelivery && (
+                  {order.shipping?.estimatedDelivery && (
                     <p><strong>Estimated Delivery:</strong> {formatDate(order.shipping.estimatedDelivery)}</p>
                   )}
-                  {order.shipping.shippedAt && (
+                  {order.shipping?.shippedAt && (
                     <p><strong>Shipped On:</strong> {formatDate(order.shipping.shippedAt)}</p>
+                  )}
+                  {shippingAddress.street && (
+                    <div className="mt-2">
+                      <p><strong>Shipping Address:</strong></p>
+                      <p>{shippingAddress.name}</p>
+                      <p>{shippingAddress.street}</p>
+                      <p>{shippingAddress.city}, {shippingAddress.state} {shippingAddress.zipCode}</p>
+                      <p>{shippingAddress.country}</p>
+                    </div>
                   )}
                 </div>
               </div>

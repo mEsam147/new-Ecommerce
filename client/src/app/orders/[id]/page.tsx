@@ -2,7 +2,7 @@
 'use client';
 
 import React from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +30,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useGetOrderQuery } from '@/lib/services/ordersApi';
+import Image from 'next/image';
 
 // Define proper TypeScript interfaces based on your backend
 interface OrderItem {
@@ -130,10 +131,13 @@ interface Order {
 
 export default function OrderDetailPage() {
   const params = useParams();
+
+  const router = useRouter()
   const orderId = params.id as string;
 
   const { data: orderResponse, isLoading, error } = useGetOrderQuery(orderId);
   const order = orderResponse?.data as Order | undefined;
+
 
   const getStatusBadge = (status: string, isPaid: boolean) => {
     const statusConfig = {
@@ -241,7 +245,7 @@ export default function OrderDetailPage() {
   };
 
   const handlePrintInvoice = () => {
-    window.open(`/api/orders/${orderId}/invoice`, '_blank');
+    router.push(`/orders/${orderId}/invoice`);
   };
 
   const handleShareOrder = () => {
@@ -258,7 +262,7 @@ export default function OrderDetailPage() {
   };
 
   const handleDownloadInvoice = () => {
-    window.open(`/api/orders/${orderId}/invoice?download=true`, '_blank');
+    router.push(`/orders/${orderId}/invoice?download=true`);
   };
 
   const handleTrackPackage = () => {
@@ -581,7 +585,9 @@ export default function OrderDetailPage() {
                     <div key={item._id || `item-${index}`} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
                       <div className="w-20 h-20 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
                         {item.image ? (
-                          <img
+                          <Image
+                          width={100}
+                          height={100}
                             src={item.image}
                             alt={item.name}
                             className="w-full h-full object-cover"

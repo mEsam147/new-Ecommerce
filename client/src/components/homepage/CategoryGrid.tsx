@@ -4,6 +4,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import Image from 'next/image';
 
 interface Category {
   _id: string;
@@ -196,8 +197,10 @@ const CategoryGrid: React.FC<CategoryGridProps> = ({ categories }) => {
 
                   {/* Image Container - Bigger */}
                   <div className="relative h-80 overflow-hidden">
-                    <img
-                      src={category.image?.url}
+                    <Image
+                    width={500}
+                    height={500}
+                      src={category.image?.url as string}
                       alt={category.name}
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                     />

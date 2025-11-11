@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import Image from 'next/image';
 
 export default function CheckoutSuccessPage() {
   const searchParams = useSearchParams();
@@ -197,7 +198,9 @@ function OrderConfirmation({ order, usedExistingOrder }: { order: any; usedExist
                 <div className="space-y-4 mb-6">
                   {items.map((item: any, index: number) => (
                     <div key={index} className="flex items-center space-x-4 p-3 bg-gray-50 rounded-lg">
-                      <img
+                      <Image
+                      width={100}
+                      height={100}
                         src={item.image || '/images/placeholder-product.jpg'}
                         alt={item.name}
                         className="w-16 h-16 object-cover rounded-lg"

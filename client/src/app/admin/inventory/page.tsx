@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Product } from '@/types';
 import { Search, Filter, AlertTriangle, Package, TrendingDown, TrendingUp, RefreshCw } from 'lucide-react';
+import Image from 'next/image';
 
 export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -267,7 +268,9 @@ function InventoryRow({ product, lowStockThreshold, onStockUpdate }: InventoryRo
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
             {product.images?.[0] ? (
-              <img
+              <Image
+              width={100}
+              height={100}
                 src={product.images[0].url}
                 alt={product.title}
                 className="w-10 h-10 object-cover rounded-lg"

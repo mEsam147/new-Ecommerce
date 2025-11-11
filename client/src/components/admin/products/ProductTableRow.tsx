@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Product } from '@/types';
 import { ProductActionsDropdown } from './ProductActionsDropdown';
 import { getStockStatus } from '@/utils/productUtils';
+import Image from 'next/image';
 
 interface ProductTableRowProps {
   product: Product;
@@ -99,7 +100,9 @@ export function ProductTableRow({
           <div className="relative">
             <div className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
               {product.images?.[0] ? (
-                <img
+                <Image
+                width={100}
+                height={100}
                   src={product.images[0].url}
                   alt={product.title}
                   className="w-full h-full object-cover"

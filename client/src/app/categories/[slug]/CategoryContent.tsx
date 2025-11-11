@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import ProductCard from '@/components/common/ProductCard';
+import Image from 'next/image';
 
 interface CategoryContentProps {
   params: {
@@ -167,7 +168,9 @@ export function CategoryContent({ params, searchParams }: CategoryContentProps) 
             <div className="text-center">
               <div className="flex items-center justify-center gap-3 mb-4">
                 {category.image?.url && (
-                  <img
+                  <Image
+                  width={100}
+                  height={100}
                     src={category.image.url}
                     alt={category.name}
                     className="w-16 h-16 rounded-2xl object-cover border-4 border-white shadow-lg"

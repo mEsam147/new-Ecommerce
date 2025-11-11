@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Product } from '@/types';
 import { useProducts } from '@/lib/hooks/useAdminProducts';
 import { toast } from 'react-hot-toast';
+import Image from 'next/image';
 
 export default function CreateProductPage() {
   const router = useRouter();
@@ -341,7 +342,9 @@ export default function CreateProductPage() {
                   <div className="grid grid-cols-4 gap-4">
                     {uploadedImages.map((file, index) => (
                       <div key={index} className="relative group">
-                        <img
+                        <Image
+                        width={100}
+                        height={30}
                           src={URL.createObjectURL(file)}
                           alt={`Preview ${index + 1}`}
                           className="w-full h-20 object-cover rounded-lg"

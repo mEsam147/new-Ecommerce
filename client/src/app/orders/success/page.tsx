@@ -27,6 +27,7 @@ import { useVerifyPaymentMutation } from '@/lib/services/paymentApi';
 import { useGetOrdersQuery } from '@/lib/services/ordersApi';
 import { Order } from '@/lib/services/ordersApi';
 import { useCart } from '@/lib/hooks/useCart';
+import Image from 'next/image';
 
 export default function OrderSuccessPage() {
   const searchParams = useSearchParams();
@@ -313,7 +314,10 @@ export default function OrderSuccessPage() {
                       <div key={item._id || index} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
                         <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
                           {item.image ? (
-                            <img
+                            <Image
+
+                            width={100}
+                            height={100}
                               src={item.image}
                               alt={item.name}
                               className="w-full h-full object-cover"

@@ -43,6 +43,38 @@ export const authApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ['User', 'Cart', 'Wishlist', 'Order'],
     }),
+
+    // Add forgot password and reset password endpoints
+    forgotPassword: builder.mutation<{
+      success: boolean;
+      message: string;
+    }, { email: string }>({
+      query: (credentials) => ({
+        url: '/auth/forgot-password',
+        method: 'POST',
+        body: credentials,
+      }),
+    }),
+
+    resetPassword: builder.mutation<{
+      success: boolean;
+      message: string;
+      data?: AuthResponse['data'];
+    }, { token: string; password: string }>({
+      query: ({ token, password }) => ({
+        url: `/auth/reset-password/${token}`,
+        method: 'PUT',
+        body: { password },
+      }),
+    }),
+
+    // Optional: Validate reset token
+    validateResetToken: builder.query<{
+      success: boolean;
+      valid: boolean;
+    }, string>({
+      query: (token) => `/auth/validate-reset-token/${token}`,
+    }),
   }),
 });
 
@@ -53,4 +85,7 @@ export const {
   useLazyGetMeQuery,
   useUpdateProfileMutation,
   useLogoutMutation,
+  useForgotPasswordMutation,
+  useResetPasswordMutation,
+  useValidateResetTokenQuery,
 } = authApi;

@@ -9,6 +9,7 @@ import { useGetBrandsQuery } from '@/lib/services/brandsApi';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Plus, Upload, X } from 'lucide-react';
+import Image from 'next/image';
 
 interface CreateProductFormProps {
   onSuccess?: () => void;
@@ -359,7 +360,9 @@ export function CreateProductForm({ onSuccess, onCancel }: CreateProductFormProp
                 <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-4">
                   {imagePreviews.map((preview, index) => (
                     <div key={index} className="relative">
-                      <img
+                      <Image
+                      width={100}
+                      height={100}
                         src={preview}
                         alt={`Preview ${index + 1}`}
                         className="w-full h-24 object-cover rounded-lg"

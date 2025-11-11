@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Brand } from '@/types';
+import Image from 'next/image';
 
 export default function CreateBrandPage() {
   const router = useRouter();
@@ -156,7 +157,9 @@ export default function CreateBrandPage() {
                 {uploadedLogo ? (
                   <div className="space-y-4">
                     <div className="relative inline-block">
-                      <img
+                      <Image
+                      width={100}
+                      height={100}
                         src={URL.createObjectURL(uploadedLogo)}
                         alt="Brand logo preview"
                         className="w-32 h-32 object-cover rounded-lg border"

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, CreditCard, Trash2, Star, Plus } from 'lucide-react';
 import { PaymentMethod } from '@/lib/services/stripeApi';
+import Image from 'next/image';
 
 interface PaymentMethodsListProps {
   paymentMethods: PaymentMethod[];
@@ -87,7 +88,7 @@ export const PaymentMethodsList: React.FC<PaymentMethodsListProps> = ({
                   <div className="flex items-center gap-4">
                     {method.brand && (
                       <div className="w-12 h-8 bg-gray-100 rounded flex items-center justify-center">
-                        <img
+                        <Image
                           src={getCardIcon(method.brand)}
                           alt={method.brand}
                           className="w-8 h-6 object-contain"
